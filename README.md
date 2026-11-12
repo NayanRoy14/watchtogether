@@ -3,8 +3,10 @@
 A room-based site where a few friends share one screen. You start a room, send the
 6-character code, and everyone in it sees the same thing with chat alongside. No accounts.
 
-**Status: Phase 1 of 5.** Rooms, people list, chat, host controls and reconnection work.
-The shared browser (Phase 2–3), voice call and Direct mode (Phase 4) are not built yet.
+**Status: Phase 2 of 5.** Rooms, people list, chat, host controls and reconnection work
+(Phase 1). The shared-browser server can be set up and used on its own (Phase 2, see
+[`infra/neko`](infra/neko/README.md)). Showing it inside a room (Phase 3), the voice call
+and Direct mode (Phase 4) are not built yet.
 
 ## How it is put together
 
@@ -13,6 +15,7 @@ The shared browser (Phase 2–3), voice call and Direct mode (Phase 4) are not b
 | `apps/web` | React + Vite + Tailwind + Zustand | Home, Join and Room screens |
 | `apps/worker` | Cloudflare Worker + Durable Objects | `/api/rooms`, `/ws/:code`; one `Room` object per code |
 | `packages/shared` | TypeScript + Zod | Every message shape, room codes, control rules |
+| `infra/neko` | Docker Compose + Caddy | The shared Chromium on an Oracle Cloud server |
 
 One Worker serves the built site and the API from the same origin. Each room is a
 SQLite-backed Durable Object using hibernating WebSockets, so it costs nothing while idle

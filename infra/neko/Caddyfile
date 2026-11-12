@@ -1,0 +1,8 @@
+# HTTPS for the shared browser. Caddy fetches and renews the certificate by itself.
+{$NEKO_DOMAIN} {
+	# Only the Watch Together site may show this browser inside a frame.
+	header Content-Security-Policy "frame-ancestors {$SITE_ORIGIN}"
+	header -X-Frame-Options
+
+	reverse_proxy neko:8080
+}
