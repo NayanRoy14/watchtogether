@@ -124,6 +124,14 @@ Then, on the server, allow your site to embed the browser:
 - **Quality.** Anyone with control can pick 540p, 720p or 1080p for the whole room. Lower
   it if the picture stutters; 1080p asks a lot of the free server.
 - **Whose cursor.** Each person's cursor is labelled with their name.
+- **After a reload.** Reloading the page or a network blip puts you back with the same
+  access; you can control again straight away.
+- **Changing rooms.** If you leave a room with the browser open and start a new room, the
+  new room can open the browser immediately; the empty one gives it up.
+- **Typing on a phone.** Tap the picture to take control, then tap the keyboard button
+  that appears on it. Lowercase letters and digits work. Capital letters and some symbols
+  typed on a phone keyboard are lost or lowercased (a limit of the browser server, not of
+  this site), so type passwords and log in from a computer.
 - **Closing.** The host can close it. It also closes itself 2 minutes after the room
   empties. Logins stay saved on the server either way.
 - **Private access.** Each person gets their own temporary login to the browser, removed

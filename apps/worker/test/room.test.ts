@@ -1,6 +1,7 @@
 import { SELF, env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CLOSE_REJECTED, CLOSE_REPLACED, generateCode, type ClientMessage, type ServerMessage } from '@wt/shared';
+import { FakeEngine } from '../src/engines/fake';
 import { publicId } from '../src/ids';
 
 type Of<T extends ServerMessage['t']> = Extract<ServerMessage, { t: T }>;
@@ -356,6 +357,24 @@ describe('Shared browser', () => {
     await z.c.next('browser:join');
   });
 
+  it('an empty room gives the browser up at once when another room asks', async () => {
+    const one = await newRoom();
+    const two = await newRoom();
+    const a = await join(one.code, 'Nayan', one.hostClientId);
+    a.c.send({ t: 'browser:open', ownerKey: KEY });
+    await a.c.next('browser:join');
+    a.c.leave(); // e.g. the owner closed the tab and started a fresh room
+    await a.c.untilClosed();
+    const first = env.ROOM.get(env.ROOM.idFromName(one.code));
+    await expect.poll(async () => (await first.info()).memberCount).toBe(0);
+    expect(await first.browserActive()).toBe(true); // still within its 2-minute grace period
+
+    const z = await join(two.code, 'Zoe', two.hostClientId);
+    z.c.send({ t: 'browser:open', ownerKey: KEY });
+    await z.c.next('browser:join');
+    expect(await first.browserActive()).toBe(false);
+  });
+
   it('closes itself two minutes after the room empties', async () => {
     const { code, hostClientId } = await newRoom();
     const stub = env.ROOM.get(env.ROOM.idFromName(code));
@@ -388,6 +407,25 @@ describe('Shared browser', () => {
     await elapse(code, 'sweep');
     const back = await join(code, 'Riya', riyaId);
     expect((await back.c.next('browser:join')).url).not.toBe(first.url); // old login was removed
+  });
+
+  it('gives control back to someone who reloads the page', async () => {
+    const { code, hostClientId } = await newRoom();
+    const a = await join(code, 'Nayan', hostClientId);
+    const riyaId = newClientId();
+    const b = await join(code, 'Riya', riyaId);
+    a.c.send({ t: 'browser:open', ownerKey: KEY });
+    await b.c.next('browser:join');
+    const key = `${code}:${b.welcome.you}`;
+    expect(FakeEngine.control.get(key)).toBe(true);
+
+    b.c.leave(); // while she is gone, her login must not be able to control
+    await a.c.until('members', (m) => m.members.length === 1);
+    await expect.poll(() => FakeEngine.control.get(key)).toBe(false);
+
+    const back = await join(code, 'Riya', riyaId); // same login, control restored
+    await back.c.next('browser:join');
+    expect(FakeEngine.control.get(key)).toBe(true);
   });
 
   it('one-driver mode: request, give, take back, and fall back to the host', async () => {
