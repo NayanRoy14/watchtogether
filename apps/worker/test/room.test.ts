@@ -284,7 +284,7 @@ describe('Shared browser', () => {
     const { code, hostClientId } = await newRoom();
     const a = await join(code, 'Nayan', hostClientId);
     const b = await join(code, 'Riya');
-    expect(a.welcome.browser).toEqual({ status: 'off', engine: null, driverId: null, requests: [] });
+    expect(a.welcome.browser).toEqual({ status: 'off', engine: null, driverId: null, requests: [], quality: '720p' });
 
     b.c.send({ t: 'browser:open', ownerKey: 'guess' });
     expect((await b.c.next('error')).code).toBe('bad_owner_key');
@@ -306,6 +306,23 @@ describe('Shared browser', () => {
     // a reconnect gets the same address back, so the stream is not reloaded
     const again = await join(code, 'Riya', b.c.clientId);
     expect((await again.c.next('browser:join')).url).toBe(forB.url);
+  });
+
+  it('lets someone with control change the quality, and remembers it', async () => {
+    const { code, hostClientId } = await newRoom();
+    const a = await join(code, 'Nayan', hostClientId);
+    const b = await join(code, 'Riya');
+
+    b.c.send({ t: 'browser:quality', quality: '540p' }); // before the browser is even open
+    expect((await a.c.until('browser:status', (m) => m.browser.quality === '540p')).browser.status).toBe('off');
+
+    a.c.send({ t: 'settings', settings: { controlMode: 'driver' } });
+    await b.c.next('settings');
+    b.c.send({ t: 'browser:quality', quality: '1080p' });
+    expect((await b.c.next('error')).code).toBe('no_control');
+
+    const late = await join(code, 'Sam');
+    expect(late.welcome.browser.quality).toBe('540p');
   });
 
   it('only the host can close it', async () => {

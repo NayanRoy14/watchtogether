@@ -3,10 +3,10 @@
 A room-based site where a few friends share one screen. You start a room, send the
 6-character code, and everyone in it sees the same thing with chat alongside. No accounts.
 
-**Status: Phase 4 of 5.** Rooms and chat (Phase 1), the shared-browser server
-([`infra/neko`](infra/neko/README.md), Phase 2), the shared browser inside a room (Phase 3),
-and now a voice call, emoji reactions and Direct mode (Phase 4). Phase 5 is polish:
-quality switch, keyboard shortcuts, installable app, phone layout.
+**Status: all five phases built.** Rooms and chat, the shared-browser server
+([`infra/neko`](infra/neko/README.md)), the shared browser inside a room, a voice call,
+reactions, Direct mode, and the polish pass (quality switch, keyboard shortcuts,
+installable app, phone layout).
 
 ## How it is put together
 
@@ -121,10 +121,34 @@ Then, on the server, allow your site to embed the browser:
 - **Control.** In "Everyone" mode whoever clicks the screen takes over. In "One driver"
   mode one person controls; others press Request control, and the host or current driver
   hands it over. The host can always take it back.
+- **Quality.** Anyone with control can pick 540p, 720p or 1080p for the whole room. Lower
+  it if the picture stutters; 1080p asks a lot of the free server.
+- **Whose cursor.** Each person's cursor is labelled with their name.
 - **Closing.** The host can close it. It also closes itself 2 minutes after the room
   empties. Logins stay saved on the server either way.
 - **Private access.** Each person gets their own temporary login to the browser, removed
   when they are kicked, a minute after they leave, or when the browser closes.
+
+## Keyboard shortcuts
+
+They work whenever you are not typing in a box. While you are clicking around inside the
+shared browser, keys go to that browser instead.
+
+| Key | Does |
+|---|---|
+| `F` | Fullscreen: the picture takes the whole screen (`Esc` to leave) |
+| `C` | Open chat and start typing |
+| `V` (hold) | Talk, when push to talk is on |
+| `Space` | Direct mode: play / pause |
+| `←` `→` | Direct mode: back / forward 10 seconds |
+| `M` | Direct mode: mute for you only |
+
+## On a phone
+
+Open the site in the phone's browser and use "Add to Home Screen" (Android: "Install
+app") to get an icon that opens it full-screen like an app. Chat slides up from the
+bottom. In the shared browser, tap the picture to take control. Turn the phone sideways
+and press the fullscreen button for the biggest picture.
 
 ## Direct mode
 

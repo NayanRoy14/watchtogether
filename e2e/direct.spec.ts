@@ -147,3 +147,50 @@ test('two people join the voice call and connect; reactions reach the other pers
   await expect(nayan.getByTestId('call-peer')).toHaveCount(0);
   await expect(riya.getByRole('button', { name: 'Join call' })).toBeVisible();
 });
+
+test('keyboard shortcuts: Space, arrows, M, C and F', async ({ browser }) => {
+  const nayan = await enter(browser, 'Nayan');
+  await nayan.getByRole('radio', { name: 'Direct' }).click();
+  await nayan.getByLabel('Video link').fill(CLIP);
+  await nayan.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(nayan.getByLabel('Seek')).toBeEnabled();
+  await nayan.locator('main').click({ position: { x: 5, y: 5 } }); // focus the page, not a control
+
+  await nayan.keyboard.press('Space');
+  await expect.poll(() => paused(nayan)).toBe(false);
+  await nayan.keyboard.press('ArrowRight');
+  await expect.poll(() => at(nayan)).toBeGreaterThan(9.5);
+  await nayan.keyboard.press('ArrowLeft');
+  await expect.poll(() => at(nayan)).toBeLessThan(5);
+  await nayan.keyboard.press('Space');
+  await expect.poll(() => paused(nayan)).toBe(true);
+
+  await nayan.keyboard.press('m');
+  await expect.poll(() => video(nayan).evaluate((v: HTMLVideoElement) => v.muted)).toBe(true);
+  await nayan.keyboard.press('m');
+  await expect.poll(() => video(nayan).evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+
+  // F hides the top bar; C brings chat up and focuses it; typing there is not a shortcut.
+  await nayan.keyboard.press('f');
+  await expect(nayan.getByRole('button', { name: /Copy link/ })).toHaveCount(0);
+  await nayan.keyboard.press('c');
+  await expect(nayan.getByLabel('Message')).toBeFocused();
+  await nayan.keyboard.type('f m c');
+  await expect(nayan.getByLabel('Message')).toHaveValue('f m c');
+  await expect.poll(() => video(nayan).evaluate((v: HTMLVideoElement) => v.muted)).toBe(false);
+  await nayan.keyboard.press('Escape'); // closes chat
+  await nayan.locator('main').click({ position: { x: 5, y: 5 } });
+  await nayan.keyboard.press('f');
+  await expect(nayan.getByRole('button', { name: /Copy link/ })).toBeVisible();
+});
+
+test('the site can be installed: manifest and icons are served', async ({ request }) => {
+  const manifest = await request.get('/manifest.webmanifest');
+  expect(manifest.ok()).toBe(true);
+  const { icons } = (await manifest.json()) as { icons: Array<{ src: string }> };
+  expect(icons.length).toBeGreaterThanOrEqual(3);
+  for (const icon of icons) {
+    const res = await request.get(icon.src);
+    expect(res.headers()['content-type']).toBe('image/png');
+  }
+});

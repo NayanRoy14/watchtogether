@@ -172,7 +172,8 @@ export const useRoom = create<RoomState>((set, get) => {
         if (msg.code === 'no_control') flash('You don’t have control right now.');
         if (msg.code === 'bad_owner_key') ownerKey.clear();
         if (msg.code === 'bad_owner_key' || msg.code === 'browser_busy' || msg.code === 'browser_offline') {
-          set({ browserError: msg.code });
+          if (get().browser.status === 'live') flash('The browser server didn’t accept that. Try again in a moment.');
+          else set({ browserError: msg.code });
         }
         return;
     }

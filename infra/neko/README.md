@@ -151,5 +151,5 @@ college's, then `docker compose restart neko`.
 | Page loads, screen stays black or "connecting" forever | UDP/TCP 52000 missing from the Oracle security list (step 3), or `PUBLIC_IP` in `.env` is wrong (`verify.sh` checks this) |
 | Browser warns about the certificate, or the page will not load | The hostname does not point at the server yet, or port 80/443 is closed. `docker compose logs caddy` shows the reason |
 | Logged out after a restart | `data/profile` is not writable: `sudo chown -R 1000:1000 data && docker compose restart neko` |
-| Choppy video | Check `docker stats`. If neko is pinned near 200% CPU, lower `NEKO_DESKTOP_SCREEN` in `docker-compose.yml` to `1280x720@24` |
+| Choppy video | Check `docker stats`. If neko is pinned near 200% CPU, pick 540p in the room's quality menu, or lower `NEKO_DESKTOP_SCREEN` in `docker-compose.yml` to `1280x720@24` |
 | Netflix / Prime / Hotstar will not play | Expected: DRM does not work in this browser |

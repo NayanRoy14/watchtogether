@@ -71,6 +71,7 @@ export function ChatPanel() {
       </div>
       <form className="flex gap-2 p-3" onSubmit={submit}>
         <input
+          id="chat-input"
           className="field"
           value={draft}
           maxLength={MAX_CHAT_LENGTH}

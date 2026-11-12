@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { formatCode, normalizeCode } from '@wt/shared';
 import { BrowserView } from '../browser/BrowserView';
@@ -11,6 +11,7 @@ import { Mark } from '../components/Mark';
 import { SettingsMenu } from '../components/SettingsMenu';
 import { DirectView } from '../direct/DirectView';
 import { getIdentity } from '../lib/identity';
+import { isTyping } from '../lib/keys';
 import { useCall } from '../rtc/call';
 import { CallDock } from '../rtc/CallDock';
 import { useMe, useRoom } from '../store/room';
@@ -37,7 +38,10 @@ function Room({ code }: { code: string }) {
   const notice = useRoom((s) => s.notice);
   const mode = useRoom((s) => s.mode);
   const callError = useCall((s) => s.error);
-  const [panelOpen, setPanelOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+  const [panelOpen, setPanelOpen] = useState(
+    // Open by default only where there is room for it beside the picture (not a phone held sideways).
+    () => window.matchMedia('(min-width: 900px) and (min-height: 500px)').matches,
+  );
 
   useEffect(() => {
     join(code);
@@ -48,21 +52,76 @@ function Room({ code }: { code: string }) {
   }, [code, join, leave]);
 
   // Fullscreen covers the whole room, so chat and notices stay visible over the stream.
+  // "Immersive" hides the top bar so the picture gets the whole screen. Phones that lack
+  // the fullscreen API (iPhone Safari) still get the immersive layout.
   const rootRef = useRef<HTMLDivElement>(null);
-  const toggleFullscreen = (): void => {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void rootRef.current?.requestFullscreen().catch(() => undefined);
-  };
+  const [immersive, setImmersive] = useState(false);
+  const toggleFullscreen = useCallback((): void => {
+    const root = rootRef.current;
+    if (document.fullscreenElement) return void document.exitFullscreen();
+    if (immersive) return setImmersive(false);
+    if (root && typeof root.requestFullscreen === 'function') {
+      root.requestFullscreen().catch(() => setImmersive(true));
+    } else {
+      setImmersive(true);
+    }
+  }, [immersive]);
+
+  useEffect(() => {
+    const onChange = (): void => {
+      setImmersive(document.fullscreenElement !== null);
+      if (document.fullscreenElement) setPanelOpen(false); // start with just the picture; C brings chat back
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  // While chat is hidden, new messages appear briefly over the picture instead.
+  const lastChat = useRoom((s) => s.chat[s.chat.length - 1]);
+  const seenChat = useRef<number | null>(null);
+  useEffect(() => {
+    if (!lastChat || seenChat.current === lastChat.id) return;
+    const first = seenChat.current === null;
+    seenChat.current = lastChat.id;
+    const { you, flash } = useRoom.getState();
+    if (!first && !panelOpen && lastChat.memberId !== you) flash(`${lastChat.name}: ${lastChat.text.slice(0, 120)}`);
+  }, [lastChat, panelOpen]);
+
+  // F: fullscreen. C: jump to the chat box. Esc: leave the immersive layout.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.repeat) return;
+      if (e.code === 'Escape' && immersive) {
+        // With no top bar to click, Esc closes chat first, then leaves the immersive layout.
+        if (panelOpen) return setPanelOpen(false);
+        if (!document.fullscreenElement) return setImmersive(false);
+      }
+      if (isTyping(e)) return;
+      if (e.code === 'KeyF') toggleFullscreen();
+      if (e.code === 'KeyC') {
+        e.preventDefault();
+        setPanelOpen(true);
+        // The panel may have just been closed (and inert); focus once it is back.
+        requestAnimationFrame(() => document.getElementById('chat-input')?.focus());
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [immersive, panelOpen, toggleFullscreen]);
 
   if (connection === 'ended') return <Ended reason={endReason ?? 'not_found'} />;
 
   return (
     <div ref={rootRef} className="bg-canvas flex h-full flex-col">
-      <TopBar code={code} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />
+      {!immersive && <TopBar code={code} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />}
       <div className="relative flex min-h-0 flex-1">
-        <main className="relative flex min-w-0 flex-1 justify-center overflow-y-auto p-2 sm:p-4">
+        <main className={`relative flex min-w-0 flex-1 justify-center overflow-y-auto ${immersive ? 'p-1' : 'p-2 sm:p-4'}`}>
           <div className="my-auto flex w-full justify-center">
-            {mode === 'browser' ? <BrowserView onFullscreen={toggleFullscreen} /> : <DirectView onFullscreen={toggleFullscreen} />}
+            {mode === 'browser' ? (
+              <BrowserView onFullscreen={toggleFullscreen} immersive={immersive} />
+            ) : (
+              <DirectView onFullscreen={toggleFullscreen} immersive={immersive} />
+            )}
           </div>
           <ReactionLayer />
           <CallDock />

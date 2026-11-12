@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Quality } from '@wt/shared';
 import { ExpandIcon, PointerIcon } from '../components/icons';
 import { ownerKey } from '../lib/identity';
 import { useMe, useRoom } from '../store/room';
@@ -10,14 +11,16 @@ const PROBLEMS = {
 } as const;
 
 /** The shared browser: a start screen while it is off, the live stream once it is on. */
-export function BrowserView({ onFullscreen }: { onFullscreen: () => void }) {
+export function BrowserView({ onFullscreen, immersive }: { onFullscreen: () => void; immersive: boolean }) {
   const status = useRoom((s) => s.browser.status);
   const url = useRoom((s) => s.browserUrl);
 
   // Sized so the 16:9 screen plus its control strip always fit the space under the top bar.
   return (
-    <div className="flex w-full max-w-[min(1280px,calc((100dvh-9.5rem)*16/9))] flex-col gap-2">
-      {status === 'live' && <ControlStrip onFullscreen={onFullscreen} />}
+    <div
+      className={`flex w-full flex-col gap-2 ${immersive ? 'max-w-[calc((100dvh-4rem)*16/9)]' : 'max-w-[min(1280px,calc((100dvh-9.5rem)*16/9))]'}`}
+    >
+      {status === 'live' && <ControlStrip onFullscreen={onFullscreen} compact={immersive} />}
       <div className="border-line relative aspect-video w-full overflow-hidden rounded-xl border bg-black">
         {status === 'live' && url ? (
           <iframe
@@ -115,7 +118,7 @@ function StartScreen() {
 }
 
 /** Who is controlling, and the buttons to change that. */
-function ControlStrip({ onFullscreen }: { onFullscreen: () => void }) {
+function ControlStrip({ onFullscreen, compact }: { onFullscreen: () => void; compact: boolean }) {
   const me = useMe();
   const members = useRoom((s) => s.members);
   const driverId = useRoom((s) => s.browser.driverId);
@@ -123,6 +126,8 @@ function ControlStrip({ onFullscreen }: { onFullscreen: () => void }) {
   const requestControl = useRoom((s) => s.requestControl);
   const giveControl = useRoom((s) => s.giveControl);
   const closeBrowser = useRoom((s) => s.closeBrowser);
+  const quality = useRoom((s) => s.browser.quality);
+  const send = useRoom((s) => s.send);
   if (!me) return null;
 
   const driver = members.find((m) => m.id === driverId);
@@ -132,14 +137,17 @@ function ControlStrip({ onFullscreen }: { onFullscreen: () => void }) {
   const quiet = 'text-dim hover:text-fg hover:bg-raised h-8 rounded-md px-2 text-xs transition-colors';
 
   return (
-    <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 px-1 text-sm">
-      <span className={`flex items-center gap-2 ${me.hasControl ? 'text-fg' : 'text-dim'}`}>
-        <PointerIcon className="h-3.5 w-3.5" style={{ color: (iDrive ? me : driver)?.color }} />
-        {driverId === null
-          ? 'Everyone can control — click the screen to take over'
-          : iDrive
-            ? 'You’re controlling'
-            : `${driver?.name ?? 'Someone'} is controlling`}
+    // In fullscreen the strip stays on one line so the picture keeps every pixel it can.
+    <div className={`flex min-h-8 items-center gap-x-3 gap-y-1 px-1 text-sm ${compact ? 'flex-nowrap' : 'flex-wrap'}`}>
+      <span className={`flex min-w-0 items-center gap-2 ${me.hasControl ? 'text-fg' : 'text-dim'}`}>
+        <PointerIcon className="h-3.5 w-3.5 shrink-0" style={{ color: (iDrive ? me : driver)?.color }} />
+        <span className={compact ? 'truncate' : ''}>
+          {driverId === null
+            ? 'Everyone can control — click or tap the screen to take over'
+            : iDrive
+              ? 'You’re controlling'
+              : `${driver?.name ?? 'Someone'} is controlling`}
+        </span>
       </span>
 
       {driverId !== null && !iDrive && (
@@ -162,12 +170,26 @@ function ControlStrip({ onFullscreen }: { onFullscreen: () => void }) {
         ))}
 
       <span className="flex-1" />
+      <select
+        className="bg-raised text-dim enabled:hover:text-fg h-8 rounded-md px-1 text-xs disabled:opacity-50"
+        aria-label="Stream quality"
+        title={me.hasControl ? 'Lower it if the picture stutters' : 'Only someone with control can change the quality'}
+        value={quality}
+        disabled={!me.hasControl}
+        onChange={(e) => send({ t: 'browser:quality', quality: Quality.parse(e.target.value) })}
+      >
+        {Quality.options.map((q) => (
+          <option key={q} value={q}>
+            {q}
+          </option>
+        ))}
+      </select>
       {me.isHost && (
         <button className={quiet} onClick={closeBrowser}>
           Close browser
         </button>
       )}
-      <button className={`${quiet} flex w-8 items-center justify-center px-0`} aria-label="Fullscreen" title="Fullscreen" onClick={onFullscreen}>
+      <button className={`${quiet} flex w-8 items-center justify-center px-0`} aria-label="Fullscreen" title="Fullscreen (F)" onClick={onFullscreen}>
         <ExpandIcon />
       </button>
     </div>

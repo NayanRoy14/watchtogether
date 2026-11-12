@@ -1,4 +1,4 @@
-import type { BrowserEngine } from './types';
+import type { BrowserEngine, EngineMember } from './types';
 
 /** A stand-in for local development and tests: no server needed, the "browser" is a plain page. */
 export class FakeEngine implements BrowserEngine {
@@ -10,12 +10,13 @@ export class FakeEngine implements BrowserEngine {
     return true;
   }
   async start(): Promise<void> {}
-  async addMember(room: string, memberId: string, canControl: boolean): Promise<string> {
-    const q = new URLSearchParams({ room, member: memberId, control: String(canControl), n: crypto.randomUUID().slice(0, 8) });
+  async addMember(room: string, member: EngineMember): Promise<string> {
+    const q = new URLSearchParams({ room, member: member.id, control: String(member.canControl), n: crypto.randomUUID().slice(0, 8) });
     return `${this.origin}/api/fake-browser?${q}`;
   }
   async removeMember(): Promise<void> {}
   async setControl(): Promise<void> {}
+  async setQuality(): Promise<void> {}
   async stop(): Promise<void> {}
 }
 

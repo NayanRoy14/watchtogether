@@ -1,8 +1,16 @@
-import type { BrowserEngine } from './types';
+import type { Quality } from '@wt/shared';
+import type { BrowserEngine, EngineMember } from './types';
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 const TIMEOUT_MS = 6000;
+
+/** 16:9 sizes neko's virtual screen accepts at 30 fps (checked against a running server). */
+const SCREENS: Record<Quality, { width: number; height: number; rate: number }> = {
+  '540p': { width: 960, height: 540, rate: 30 },
+  '720p': { width: 1280, height: 720, rate: 30 },
+  '1080p': { width: 1920, height: 1080, rate: 30 },
+};
 
 /**
  * neko (m1k1o/neko v3) through its admin API.
@@ -42,11 +50,11 @@ export class NekoEngine implements BrowserEngine {
     });
   }
 
-  async addMember(room: string, memberId: string, canControl: boolean): Promise<string> {
-    const username = account(room, memberId);
+  async addMember(room: string, member: EngineMember): Promise<string> {
+    const username = account(room, member.id);
     const password = randomHex(16);
     await this.call('DELETE', `/api/members/${username}`); // fine if it did not exist
-    await this.expect('POST', '/api/members', { username, password, profile: profile(username, canControl) });
+    await this.expect('POST', '/api/members', { username, password, profile: profile(member) });
     const q = new URLSearchParams({ usr: username, pwd: password, embed: '1' });
     return `${this.base}/?${q}`;
   }
@@ -55,13 +63,12 @@ export class NekoEngine implements BrowserEngine {
     await this.call('DELETE', `/api/members/${account(room, memberId)}`);
   }
 
-  async setControl(room: string, canControl: Readonly<Record<string, boolean>>): Promise<void> {
-    await Promise.all(
-      Object.entries(canControl).map(([memberId, allowed]) => {
-        const username = account(room, memberId);
-        return this.call('POST', `/api/members/${username}`, profile(username, allowed));
-      }),
-    );
+  async setControl(room: string, members: readonly EngineMember[]): Promise<void> {
+    await Promise.all(members.map((m) => this.call('POST', `/api/members/${account(room, m.id)}`, profile(m))));
+  }
+
+  async setQuality(quality: Quality): Promise<void> {
+    await this.expect('POST', '/api/room/screen', SCREENS[quality]);
   }
 
   async stop(room: string): Promise<void> {
@@ -103,7 +110,7 @@ export class NekoEngine implements BrowserEngine {
 const prefix = (room: string): string => `wt-${room.toLowerCase()}-`;
 const account = (room: string, memberId: string): string => prefix(room) + memberId;
 
-function profile(name: string, canControl: boolean): Record<string, unknown> {
+function profile({ name, canControl }: EngineMember): Record<string, unknown> {
   return {
     name,
     is_admin: false,

@@ -5,11 +5,13 @@ import { Html5Adapter } from '../players/Html5Adapter';
 import { localFiles, probe } from '../players/localFiles';
 import { PlaybackError, type PlayerAdapter } from '../players/PlayerAdapter';
 import { YouTubeAdapter } from '../players/YouTubeAdapter';
+import { isTyping } from '../lib/keys';
 import { formatTime, serverNow, useMe, useRoom } from '../store/room';
 import { SyncEngine } from '../sync/engine';
+import { usePlayerPrefs } from './prefs';
 
 /** Direct mode: everyone plays the video themselves and the room keeps the players in step. */
-export function DirectView({ onFullscreen }: { onFullscreen: () => void }) {
+export function DirectView({ onFullscreen, immersive }: { onFullscreen: () => void; immersive: boolean }) {
   const playback = useRoom((s) => s.playback);
   const waiting = useRoom((s) => s.waiting);
   const canControl = useMe()?.hasControl ?? false;
@@ -84,8 +86,32 @@ export function DirectView({ onFullscreen }: { onFullscreen: () => void }) {
     if (playback) engineRef.current?.apply(playback);
   }, [playback]);
 
+  // Space, ← → and M, as on any video site — unless the person is typing or on a button.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const state = useRoom.getState().playback;
+      const player = playerRef.current;
+      if (!state || !player || e.repeat) return;
+      if (e.code === 'KeyM' && !isTyping(e)) return usePlayerPrefs.getState().toggleMute();
+      if (isTyping(e, true)) return;
+      const send = useRoom.getState().send;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        send({ t: 'intent', action: state.playing ? 'pause' : 'play', position: player.currentTime() });
+      } else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+        e.preventDefault();
+        const to = player.currentTime() + (e.code === 'ArrowLeft' ? -10 : 10);
+        send({ t: 'intent', action: 'seek', position: Math.max(0, Math.min(to, player.duration() || to)) });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
-    <div className="flex w-full max-w-[min(1280px,calc((100dvh-16rem)*16/9))] min-w-[min(100%,20rem)] flex-col gap-2">
+    <div
+      className={`flex w-full min-w-[min(100%,20rem)] flex-col gap-2 ${immersive ? 'max-w-[calc((100dvh-4rem)*16/9)]' : 'max-w-[min(1280px,calc((100dvh-16rem)*16/9))]'}`}
+    >
       <div className="border-line relative aspect-video w-full overflow-hidden rounded-xl border bg-black">
         <div ref={mountRef} className="absolute inset-0" />
         {!source && <Empty canControl={canControl} />}
@@ -112,8 +138,8 @@ export function DirectView({ onFullscreen }: { onFullscreen: () => void }) {
       </div>
 
       {playback && <ControlBar playback={playback} player={playerRef} canControl={canControl} onFullscreen={onFullscreen} />}
-      <SourceBar canControl={canControl} />
-      <Queue canControl={canControl} />
+      {!immersive && <SourceBar canControl={canControl} />}
+      {!immersive && <Queue canControl={canControl} />}
     </div>
   );
 }
@@ -190,8 +216,7 @@ function ControlBar({
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [dragging, setDragging] = useState<number | null>(null);
-  const [volume, setVolume] = useState(1);
-  const [muted, setMuted] = useState(false);
+  const { volume, muted, setVolume, toggleMute } = usePlayerPrefs();
 
   useEffect(() => {
     const read = (): void => {
@@ -218,7 +243,7 @@ function ControlBar({
         className={`${quiet} text-fg w-8`}
         disabled={!canControl}
         aria-label={playback.playing ? 'Pause' : 'Play'}
-        title={canControl ? undefined : 'You don’t have control'}
+        title={canControl ? 'Play / pause (Space)' : 'You don’t have control'}
         onClick={() => send({ t: 'intent', action: playback.playing ? 'pause' : 'play', position: position() })}
       >
         {playback.playing ? <PauseIcon /> : <PlayIcon />}
@@ -254,7 +279,7 @@ function ControlBar({
         ))}
       </select>
 
-      <button className={`${quiet} w-8`} aria-label={muted ? 'Unmute' : 'Mute'} aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
+      <button className={`${quiet} w-8`} aria-label={muted ? 'Unmute' : 'Mute'} aria-pressed={muted} title="Mute (M)" onClick={toggleMute}>
         <VolumeIcon off={muted || volume === 0} />
       </button>
       <input
@@ -265,12 +290,9 @@ function ControlBar({
         max={1}
         step={0.05}
         value={muted ? 0 : volume}
-        onChange={(e) => {
-          setVolume(Number(e.target.value));
-          setMuted(false);
-        }}
+        onChange={(e) => setVolume(Number(e.target.value))}
       />
-      <button className={`${quiet} w-8`} aria-label="Fullscreen" title="Fullscreen" onClick={onFullscreen}>
+      <button className={`${quiet} w-8`} aria-label="Fullscreen" title="Fullscreen (F)" onClick={onFullscreen}>
         <ExpandIcon />
       </button>
     </div>

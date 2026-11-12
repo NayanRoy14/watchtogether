@@ -33,11 +33,16 @@ test('the owner opens the shared browser and both people get it', async ({ brows
   expect(mine).not.toBe(theirs);
   await expect(riya.getByText('Everyone can control')).toBeVisible();
 
+  // Quality is one setting for the whole room.
+  await riya.getByLabel('Stream quality').selectOption('540p');
+  await expect(nayan.getByLabel('Stream quality')).toHaveValue('540p');
+
   // One-driver mode: the friend asks, the host gives, the host takes it back.
   await nayan.getByRole('button', { name: 'Room settings' }).click();
   await nayan.getByRole('radio', { name: 'One driver' }).click();
   await nayan.keyboard.press('Escape');
   await expect(riya.getByText('Nayan is controlling')).toBeVisible();
+  await expect(riya.getByLabel('Stream quality')).toBeDisabled();
   await riya.getByRole('button', { name: 'Request control' }).click();
   await nayan.getByRole('button', { name: /Riya wants control/ }).click();
   await expect(riya.getByText('You’re controlling')).toBeVisible();

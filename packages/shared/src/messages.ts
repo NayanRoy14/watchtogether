@@ -61,6 +61,11 @@ export type ErrorCode = z.infer<typeof ErrorCode>;
 export const EngineName = z.enum(['neko', 'fake']);
 export type EngineName = z.infer<typeof EngineName>;
 
+/** Stream quality: the size of the shared browser's screen. Smaller needs less bandwidth. */
+export const Quality = z.enum(['540p', '720p', '1080p']);
+export type Quality = z.infer<typeof Quality>;
+export const DEFAULT_QUALITY: Quality = '720p';
+
 /** The shared browser as everyone in the room sees it. */
 export const BrowserStatus = z.object({
   status: z.enum(['off', 'starting', 'live']),
@@ -69,10 +74,11 @@ export const BrowserStatus = z.object({
   driverId: MemberId.nullable(),
   /** Members who pressed "Request control". */
   requests: z.array(MemberId),
+  quality: Quality,
 });
 export type BrowserStatus = z.infer<typeof BrowserStatus>;
 
-export const BROWSER_OFF: BrowserStatus = { status: 'off', engine: null, driverId: null, requests: [] };
+export const BROWSER_OFF: BrowserStatus = { status: 'off', engine: null, driverId: null, requests: [], quality: DEFAULT_QUALITY };
 
 // ---- Direct mode -------------------------------------------------------------
 
@@ -132,6 +138,7 @@ export const ClientMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('browser:request-control') }),
   // Without an id the sender takes control themselves (host only).
   z.object({ t: z.literal('browser:give-control'), id: MemberId.optional() }),
+  z.object({ t: z.literal('browser:quality'), quality: Quality }),
 
   z.object({ t: z.literal('react'), emoji: z.enum(REACTIONS) }),
   // Voice call: presence, then WebRTC signalling relayed to exactly one member.

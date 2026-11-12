@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
   BROWSER_OFF,
+  DEFAULT_QUALITY,
   CHAT_KEPT,
   CHAT_ON_JOIN,
   CLOSE_REJECTED,
@@ -21,6 +22,7 @@ import {
   type ErrorCode,
   type Member,
   type PlaybackState,
+  type Quality,
   type QueueItem,
   type RoomInfo,
   type RoomMode,
@@ -165,6 +167,20 @@ export class Room extends DurableObject<Env> {
       case 'browser:close':
         if (!this.isHost(seat)) return send(ws, { t: 'error', code: 'not_host' });
         return this.stopBrowser();
+      case 'browser:quality': {
+        if (!this.canControl(seat.id)) return send(ws, { t: 'error', code: 'no_control' });
+        if (msg.quality === this.quality()) return;
+        if (this.browser().status === 'live') {
+          try {
+            await this.engine()?.setQuality(msg.quality);
+          } catch (err) {
+            console.error('browser quality change failed', err);
+            return send(ws, { t: 'error', code: 'browser_offline' }); // nothing changed; say so
+          }
+        }
+        this.put('quality', msg.quality); // while off, remembered for when it opens
+        return this.broadcastBrowser();
+      }
       case 'browser:request-control': {
         if (this.settings().controlMode !== 'driver' || seat.id === this.driver()) return;
         this.put('requests', [...new Set([...this.requests(), seat.id])]);
@@ -437,6 +453,7 @@ export class Room extends DurableObject<Env> {
       try {
         if (!(await engine.healthy())) throw new Error('engine not healthy');
         await engine.start(code);
+        await engine.setQuality(this.quality());
       } catch (err) {
         console.error('browser start failed', err);
         failure = 'browser_offline';
@@ -464,7 +481,7 @@ export class Room extends DurableObject<Env> {
     let url = state.urls[memberId];
     if (!url) {
       try {
-        url = await engine.addMember(this.code(), memberId, this.canControl(memberId));
+        url = await engine.addMember(this.code(), this.engineMember(memberId));
       } catch (err) {
         console.error('browser admit failed', err);
         return send(ws, { t: 'error', code: 'browser_offline' });
@@ -510,16 +527,20 @@ export class Room extends DurableObject<Env> {
     }
   }
 
+  private engineMember(memberId: string): { id: string; name: string; canControl: boolean } {
+    const seat = this.seated().find((s) => s.seat.id === memberId)?.seat;
+    // Someone who has left keeps a login for a minute (see sweep) but must not keep control.
+    return { id: memberId, name: seat?.name ?? 'Guest', canControl: seat ? this.canControl(memberId) : false };
+  }
+
   /** Host, driver or mode changed: tell everyone, and make the browser itself enforce it. */
   private async controlChanged(): Promise<void> {
     this.broadcastMembers();
     this.broadcastBrowser();
     const state = this.browser();
     if (state.status !== 'live') return;
-    const allowed: Record<string, boolean> = {};
-    for (const memberId of Object.keys(state.urls)) allowed[memberId] = this.canControl(memberId);
     try {
-      await this.engine()?.setControl(this.code(), allowed);
+      await this.engine()?.setControl(this.code(), Object.keys(state.urls).map((id) => this.engineMember(id)));
     } catch (err) {
       console.error('browser control update failed', err);
     }
@@ -631,7 +652,12 @@ export class Room extends DurableObject<Env> {
       engine,
       driverId: driverMode ? this.driver() : null,
       requests: driverMode ? this.requests() : [],
+      quality: this.quality(),
     };
+  }
+
+  private quality(): Quality {
+    return this.get<Quality>('quality') ?? DEFAULT_QUALITY;
   }
 
   private requests(): string[] {
