@@ -4,7 +4,8 @@ One real Chromium ([neko](https://github.com/m1k1o/neko)) running on a free Orac
 server and streamed to everyone in a room. This folder is everything that server needs.
 
 At the end of this guide you and a friend can both open one URL, see the same browser,
-and either of you can click in it. The Watch Together site is wired to it in Phase 3.
+and either of you can click in it. Connecting it to the Watch Together site is covered in
+the [main README](../../README.md#connect-the-shared-browser).
 
 ## What you need
 
@@ -128,8 +129,8 @@ Chromium. Your logins are on disk in `data/profile`, so they survive.
 
 ## What is locked down
 
-- The browser page only loads inside a frame from `SITE_ORIGIN` in `.env` (set it in
-  Phase 3: `./setup.sh --no-system "" https://your-site.workers.dev`).
+- The browser page only loads inside a frame from `SITE_ORIGIN` in `.env` (set it once the
+  site is deployed: `./setup.sh --no-system "" https://your-site.workers.dev`).
 - There are no standing accounts. Logins exist only while you create them with
   `member.sh`; later the room server creates one per person and deletes it afterwards.
 - Inside Chromium, the password manager, autofill, DevTools, downloads, extensions and

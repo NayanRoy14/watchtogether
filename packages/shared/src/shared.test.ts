@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CODE_ALPHABET, ClientMessage, formatCode, generateCode, hasControl, normalizeCode, pickHost } from './index';
+import {
+  CODE_ALPHABET, ClientMessage, formatCode, generateCode, hasControl, mayGiveControl, nextAlarm, normalizeCode,
+  pickDriver, pickHost,
+} from './index';
 
 describe('room codes', () => {
   it('generates 6 unambiguous characters', () => {
@@ -31,7 +34,21 @@ describe('messages', () => {
 });
 
 describe('control rules', () => {
-  it('everyone mode gives control to all; driver mode only to the host', () => {
+  it('the driver is whoever was handed control, or the host if they are gone', () => {
+    expect(pickDriver(['h', 'a'], 'a', 'h')).toBe('a');
+    expect(pickDriver(['h'], 'a', 'h')).toBe('h');
+    expect(pickDriver(['h'], null, 'h')).toBe('h');
+  });
+  it('only the host or the current driver can hand control on', () => {
+    expect(mayGiveControl('h', 'h', 'd')).toBe(true);
+    expect(mayGiveControl('d', 'h', 'd')).toBe(true);
+    expect(mayGiveControl('x', 'h', 'd')).toBe(false);
+  });
+  it('wakes at the earliest deadline', () => {
+    expect(nextAlarm({ close: 200, purge: 900, sweep: undefined })).toBe(200);
+    expect(nextAlarm({})).toBeNull();
+  });
+  it('everyone mode gives control to all; driver mode only to the driver', () => {
     expect(hasControl('everyone', false)).toBe(true);
     expect(hasControl('driver', false)).toBe(false);
     expect(hasControl('driver', true)).toBe(true);

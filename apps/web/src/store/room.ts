@@ -1,6 +1,9 @@
 import { create } from 'zustand';
-import { CHAT_KEPT, DEFAULT_SETTINGS, type ChatMessage, type Member, type RoomSettings, type ServerMessage } from '@wt/shared';
-import { getIdentity } from '../lib/identity';
+import {
+  BROWSER_OFF, CHAT_KEPT, DEFAULT_SETTINGS,
+  type BrowserStatus, type ChatMessage, type Member, type RoomSettings, type ServerMessage,
+} from '@wt/shared';
+import { getIdentity, ownerKey } from '../lib/identity';
 import { RoomSocket, type Connection, type EndReason } from './socket';
 
 interface RoomState {
@@ -15,6 +18,11 @@ interface RoomState {
   clockOffset: number;
   /** A short-lived notice such as "Slow down". */
   notice: string | null;
+  browser: BrowserStatus;
+  /** This person's own address for the live browser; null until the server sends it. */
+  browserUrl: string | null;
+  /** Why the last attempt to open the browser failed. */
+  browserError: 'bad_owner_key' | 'browser_busy' | 'browser_offline' | null;
 
   join: (code: string) => void;
   leave: () => void;
@@ -22,6 +30,11 @@ interface RoomState {
   updateSettings: (patch: Partial<RoomSettings>) => void;
   transferHost: (id: string) => void;
   kick: (id: string) => void;
+  openBrowser: (key: string) => void;
+  closeBrowser: () => void;
+  requestControl: () => void;
+  /** Hand control to someone; with no id, take it yourself (host). */
+  giveControl: (id?: string) => void;
 }
 
 const blank = {
@@ -34,6 +47,9 @@ const blank = {
   settings: DEFAULT_SETTINGS,
   clockOffset: 0,
   notice: null,
+  browser: BROWSER_OFF,
+  browserUrl: null,
+  browserError: null as RoomState['browserError'],
 };
 
 let socket: RoomSocket | null = null;
@@ -49,7 +65,24 @@ export const useRoom = create<RoomState>((set, get) => {
   const onMessage = (msg: ServerMessage): void => {
     switch (msg.t) {
       case 'welcome':
-        return set({ you: msg.you, members: msg.members, chat: msg.chat, settings: msg.settings });
+        return set({
+          you: msg.you,
+          members: msg.members,
+          chat: msg.chat,
+          settings: msg.settings,
+          browser: msg.browser,
+          // Keep our address across a reconnect so the stream is not reloaded.
+          browserUrl: msg.browser.status === 'live' ? get().browserUrl : null,
+        });
+      case 'browser:status':
+        return set({
+          browser: msg.browser,
+          browserUrl: msg.browser.status === 'live' ? get().browserUrl : null,
+          browserError: msg.browser.status === 'off' ? get().browserError : null,
+        });
+      case 'browser:join':
+        if (msg.url !== get().browserUrl) set({ browserUrl: msg.url });
+        return;
       case 'members':
         return set({ members: msg.members });
       case 'settings':
@@ -61,8 +94,13 @@ export const useRoom = create<RoomState>((set, get) => {
         return set({ clockOffset: msg.serverTime - (msg.t0 + t1) / 2 });
       }
       case 'error':
-        if (msg.code === 'rate_limited') flash('Slow down a little — that message was not sent.');
+        if (msg.code === 'rate_limited') flash('Slow down a little, then try again.');
         if (msg.code === 'not_host') flash('Only the host can do that.');
+        if (msg.code === 'no_control') flash('You don’t have control right now.');
+        if (msg.code === 'bad_owner_key') ownerKey.clear();
+        if (msg.code === 'bad_owner_key' || msg.code === 'browser_busy' || msg.code === 'browser_offline') {
+          set({ browserError: msg.code });
+        }
         return;
     }
   };
@@ -96,6 +134,15 @@ export const useRoom = create<RoomState>((set, get) => {
     },
     transferHost: (id) => socket?.send({ t: 'transfer-host', id }),
     kick: (id) => socket?.send({ t: 'kick', id }),
+
+    openBrowser: (key) => {
+      ownerKey.set(key); // forgotten again if the server says it is wrong
+      set({ browserError: null });
+      socket?.send({ t: 'browser:open', ownerKey: key });
+    },
+    closeBrowser: () => socket?.send({ t: 'browser:close' }),
+    requestControl: () => socket?.send({ t: 'browser:request-control' }),
+    giveControl: (id) => socket?.send({ t: 'browser:give-control', id }),
   };
 });
 

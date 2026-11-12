@@ -5,7 +5,7 @@ import { GearIcon } from './icons';
 
 const MODES: Array<{ value: ControlMode; label: string; hint: string }> = [
   { value: 'everyone', label: 'Everyone', hint: 'Anyone in the room can control what’s playing.' },
-  { value: 'driver', label: 'One driver', hint: 'Only the host controls; others watch.' },
+  { value: 'driver', label: 'One driver', hint: 'One person controls at a time. Others can ask for a turn.' },
 ];
 
 /** Host-only room settings. Changes apply to everyone immediately. */

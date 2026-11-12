@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { formatCode, normalizeCode } from '@wt/shared';
+import { BrowserView } from '../browser/BrowserView';
 import { ChatPanel } from '../chat/ChatPanel';
 import { PeoplePanel } from '../chat/PeoplePanel';
 import { Avatar } from '../components/Avatar';
@@ -37,14 +38,21 @@ function Room({ code }: { code: string }) {
     return leave;
   }, [code, join, leave]);
 
+  // Fullscreen covers the whole room, so chat and notices stay visible over the stream.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const toggleFullscreen = (): void => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void rootRef.current?.requestFullscreen().catch(() => undefined);
+  };
+
   if (connection === 'ended') return <Ended reason={endReason ?? 'not_found'} />;
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={rootRef} className="bg-canvas flex h-full flex-col">
       <TopBar code={code} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />
       <div className="relative flex min-h-0 flex-1">
         <main className="relative flex min-w-0 flex-1 items-center justify-center p-2 sm:p-4">
-          <Stage />
+          <BrowserView onFullscreen={toggleFullscreen} />
           {(connection !== 'live' || notice) && (
             <div
               role="status"
@@ -128,20 +136,6 @@ function TopBar({ code, panelOpen, onTogglePanel }: { code: string; panelOpen: b
         <ExitIcon />
       </Link>
     </header>
-  );
-}
-
-/** Where the shared browser will live. Until then it says so plainly. */
-function Stage() {
-  const count = useRoom((s) => s.members.length);
-  return (
-    <div className="border-line flex aspect-video max-h-full w-full max-w-[1280px] flex-col items-center justify-center rounded-xl border border-dashed bg-black/40 px-6 text-center">
-      <p className="text-lg font-semibold">The screen is dark for now</p>
-      <p className="text-dim mt-2 max-w-sm text-sm leading-relaxed">
-        The shared browser isn’t connected yet.{' '}
-        {count < 2 ? 'Copy the link above and bring a friend in — chat already works.' : 'Chat already works — try it.'}
-      </p>
-    </div>
   );
 }
 

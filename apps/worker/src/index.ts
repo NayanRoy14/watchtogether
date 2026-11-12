@@ -1,9 +1,11 @@
 import { CreateRoomRequest, generateCode, normalizeCode } from '@wt/shared';
 import type { Env } from './env';
+import { fakeBrowserPage } from './engines/fake';
 import { publicId } from './ids';
 
 export { Room } from './room';
 export { RateLimit } from './ratelimit';
+export { BrowserLease } from './lease';
 
 const CREATE_LIMIT = 10;
 const CREATE_WINDOW_MS = 60 * 60 * 1000;
@@ -31,6 +33,8 @@ export default {
       return env.ROOM.get(env.ROOM.idFromName(code)).fetch(request);
     }
 
+    if (url.pathname === '/api/fake-browser' && env.BROWSER_ENGINE === 'fake') return fakeBrowserPage(url);
+
     return json({ error: 'not_found' }, 404);
   },
 } satisfies ExportedHandler<Env>;
@@ -47,7 +51,7 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
   // A collision with a live room is ~1 in 887 million per attempt; retry anyway.
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateCode();
-    if (await env.ROOM.get(env.ROOM.idFromName(code)).create(hostId)) return json({ code }, 201);
+    if (await env.ROOM.get(env.ROOM.idFromName(code)).create(code, hostId)) return json({ code }, 201);
   }
   return json({ error: 'try_again' }, 503);
 }

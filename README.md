@@ -3,10 +3,10 @@
 A room-based site where a few friends share one screen. You start a room, send the
 6-character code, and everyone in it sees the same thing with chat alongside. No accounts.
 
-**Status: Phase 2 of 5.** Rooms, people list, chat, host controls and reconnection work
-(Phase 1). The shared-browser server can be set up and used on its own (Phase 2, see
-[`infra/neko`](infra/neko/README.md)). Showing it inside a room (Phase 3), the voice call
-and Direct mode (Phase 4) are not built yet.
+**Status: Phase 3 of 5.** Rooms, chat and host controls work (Phase 1). The shared-browser
+server can be set up from [`infra/neko`](infra/neko/README.md) (Phase 2). A room can now
+open that browser for everyone in it, with shared or one-at-a-time control (Phase 3). The
+voice call and Direct mode (Phase 4) are not built yet.
 
 ## How it is put together
 
@@ -32,6 +32,10 @@ pnpm install
 ```bash
 pnpm dev
 ```
+
+To use the "Open browser" button locally, copy `apps/worker/.dev.vars.example` to
+`apps/worker/.dev.vars` first. It turns on a stand-in page in place of the real browser,
+so no server is needed; the passphrase is `let-me-in`.
 
 Open http://localhost:5173. Vite serves the UI and forwards `/api` and `/ws` to
 `wrangler dev` on port 8787. To try it as two people, open the room link in a private
@@ -79,6 +83,48 @@ pnpm run deploy
 ```
 
 The site comes up at `https://watchtogether.<your-subdomain>.workers.dev`.
+
+### Connect the shared browser
+
+After the server from [`infra/neko`](infra/neko/README.md) passes `./verify.sh`, give the
+site three secrets (run in `apps/worker`; each command asks for the value):
+
+```bash
+pnpm exec wrangler secret put NEKO_URL
+```
+
+```bash
+pnpm exec wrangler secret put NEKO_ADMIN_TOKEN
+```
+
+```bash
+pnpm exec wrangler secret put OWNER_PASSPHRASE
+```
+
+- `NEKO_URL` — the server's address, e.g. `https://nayan-watch.duckdns.org`
+- `NEKO_ADMIN_TOKEN` — the `NEKO_API_TOKEN` line from `infra/neko/.env` on the server
+- `OWNER_PASSPHRASE` — any phrase you choose; you type it once per device to open the browser
+
+Then, on the server, allow your site to embed the browser:
+
+```bash
+./setup.sh --no-system "" https://watchtogether.<your-subdomain>.workers.dev
+```
+
+## The shared browser
+
+- **Opening it** needs the owner passphrase, because the browser keeps the owner's logins.
+  Once open, everyone in the room sees and hears it; people who join later are let in
+  automatically.
+- **One room at a time.** There is a single browser, so a second room that tries to open
+  it is told it is in use.
+- **Control.** In "Everyone" mode whoever clicks the screen takes over. In "One driver"
+  mode one person controls; others press Request control, and the host or current driver
+  hands it over. The host can always take it back.
+- **Closing.** The host can close it. It also closes itself 2 minutes after the room
+  empties. Logins stay saved on the server either way.
+- **Private access.** Each person gets their own temporary login to the browser, removed
+  when they are kicked, a minute after they leave, or when the browser closes.
 
 ## Room rules
 

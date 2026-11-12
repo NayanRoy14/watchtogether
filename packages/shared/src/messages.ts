@@ -49,8 +49,25 @@ export type ChatMessage = z.infer<typeof ChatMessage>;
 
 export const ErrorCode = z.enum([
   'no_control', 'not_host', 'room_full', 'room_locked', 'bad_message', 'kicked', 'rate_limited',
+  'bad_owner_key', 'browser_busy', 'browser_offline',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
+
+export const EngineName = z.enum(['neko', 'fake']);
+export type EngineName = z.infer<typeof EngineName>;
+
+/** The shared browser as everyone in the room sees it. */
+export const BrowserStatus = z.object({
+  status: z.enum(['off', 'starting', 'live']),
+  engine: EngineName.nullable(),
+  /** Who is driving, in one-driver mode; null when everyone controls. */
+  driverId: MemberId.nullable(),
+  /** Members who pressed "Request control". */
+  requests: z.array(MemberId),
+});
+export type BrowserStatus = z.infer<typeof BrowserStatus>;
+
+export const BROWSER_OFF: BrowserStatus = { status: 'off', engine: null, driverId: null, requests: [] };
 
 /** WebSocket close codes the server uses on purpose. */
 export const CLOSE_REPLACED = 4000; // same person connected from another tab
@@ -66,6 +83,12 @@ export const ClientMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('settings'), settings: RoomSettings.partial() }),
   z.object({ t: z.literal('transfer-host'), id: MemberId }),
   z.object({ t: z.literal('kick'), id: MemberId }),
+  // Starting the browser needs the owner's passphrase: it holds the owner's logins.
+  z.object({ t: z.literal('browser:open'), ownerKey: z.string().min(1).max(200) }),
+  z.object({ t: z.literal('browser:close') }),
+  z.object({ t: z.literal('browser:request-control') }),
+  // Without an id the sender takes control themselves (host only).
+  z.object({ t: z.literal('browser:give-control'), id: MemberId.optional() }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 
@@ -78,7 +101,11 @@ export const ServerMessage = z.discriminatedUnion('t', [
     members: z.array(Member),
     chat: z.array(ChatMessage),
     settings: RoomSettings,
+    browser: BrowserStatus,
   }),
+  z.object({ t: z.literal('browser:status'), browser: BrowserStatus }),
+  // Sent only to the member it is for: the address carries that member's own login.
+  z.object({ t: z.literal('browser:join'), engine: EngineName, url: z.string().url() }),
   z.object({ t: z.literal('pong'), t0: z.number(), serverTime: z.number() }),
   z.object({ t: z.literal('members'), members: z.array(Member) }),
   z.object({ t: z.literal('chat'), message: ChatMessage }),

@@ -6,7 +6,8 @@ export default defineConfig({
   timeout: 30_000,
   use: { baseURL: 'http://localhost:8787', trace: 'off' },
   webServer: {
-    command: 'pnpm build && pnpm --filter @wt/worker dev',
+    // The stand-in engine replaces neko, so the tests need no browser server.
+    command: 'pnpm build && pnpm --filter @wt/worker dev --var BROWSER_ENGINE:fake --var OWNER_PASSPHRASE:e2e-passphrase',
     url: 'http://localhost:8787',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
