@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
-  { ignores: ['**/dist', '**/.wrangler', '**/node_modules', 'playwright-report', 'test-results'] },
+  { ignores: ['infra/neko/data', '**/dist', '**/.wrangler', '**/node_modules', 'playwright-report', 'test-results'] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   {
@@ -11,6 +11,11 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
     },
+  },
+  {
+    // Tests index into known-length arrays all the time; `!` is clearer there than guards.
+    files: ['**/*.test.ts', 'e2e/**'],
+    rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
   },
   {
     files: ['apps/web/**/*.{ts,tsx}'],

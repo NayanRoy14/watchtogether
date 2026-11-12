@@ -7,6 +7,7 @@ export type EndReason = 'kicked' | 'room_full' | 'room_locked' | 'replaced' | 'n
 
 const FATAL = new Set<string>(['kicked', 'room_full', 'room_locked']);
 const PING_EVERY_MS = 30_000;
+const CLOCK_BURST = 5;
 
 interface Handlers {
   hello: () => Extract<ClientMessage, { t: 'hello' }>;
@@ -53,7 +54,8 @@ export class RoomSocket {
 
     ws.onopen = () => {
       this.send(this.handlers.hello());
-      this.ping();
+      // A quick burst to pin down the server clock, then a slow trickle to keep it honest.
+      for (let i = 0; i < CLOCK_BURST; i++) setTimeout(() => ws === this.ws && this.ping(), i * 250);
       clearInterval(this.pingTimer);
       this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS);
     };

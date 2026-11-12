@@ -1,0 +1,9 @@
+# Copy to .dev.vars for local development (that file is git-ignored).
+
+# Try the room UI without any browser server: a stand-in page replaces neko.
+BROWSER_ENGINE=fake
+OWNER_PASSPHRASE=let-me-in
+
+# Or point at a real neko server instead (remove BROWSER_ENGINE above):
+# NEKO_URL=https://nayan-watch.duckdns.org
+# NEKO_ADMIN_TOKEN=the NEKO_API_TOKEN value from infra/neko/.env on the server

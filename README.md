@@ -3,10 +3,10 @@
 A room-based site where a few friends share one screen. You start a room, send the
 6-character code, and everyone in it sees the same thing with chat alongside. No accounts.
 
-**Status: Phase 2 of 5.** Rooms, people list, chat, host controls and reconnection work
-(Phase 1). The shared-browser server can be set up and used on its own (Phase 2, see
-[`infra/neko`](infra/neko/README.md)). Showing it inside a room (Phase 3), the voice call
-and Direct mode (Phase 4) are not built yet.
+**Status: all five phases built.** Rooms and chat, the shared-browser server
+([`infra/neko`](infra/neko/README.md)), the shared browser inside a room, a voice call,
+reactions, Direct mode, and the polish pass (quality switch, keyboard shortcuts,
+installable app, phone layout).
 
 ## How it is put together
 
@@ -32,6 +32,10 @@ pnpm install
 ```bash
 pnpm dev
 ```
+
+To use the "Open browser" button locally, copy `apps/worker/.dev.vars.example` to
+`apps/worker/.dev.vars` first. It turns on a stand-in page in place of the real browser,
+so no server is needed; the passphrase is `let-me-in`.
 
 Open http://localhost:5173. Vite serves the UI and forwards `/api` and `/ws` to
 `wrangler dev` on port 8787. To try it as two people, open the room link in a private
@@ -79,6 +83,104 @@ pnpm run deploy
 ```
 
 The site comes up at `https://watchtogether.<your-subdomain>.workers.dev`.
+
+### Connect the shared browser
+
+After the server from [`infra/neko`](infra/neko/README.md) passes `./verify.sh`, give the
+site three secrets (run in `apps/worker`; each command asks for the value):
+
+```bash
+pnpm exec wrangler secret put NEKO_URL
+```
+
+```bash
+pnpm exec wrangler secret put NEKO_ADMIN_TOKEN
+```
+
+```bash
+pnpm exec wrangler secret put OWNER_PASSPHRASE
+```
+
+- `NEKO_URL` — the server's address, e.g. `https://nayan-watch.duckdns.org`
+- `NEKO_ADMIN_TOKEN` — the `NEKO_API_TOKEN` line from `infra/neko/.env` on the server
+- `OWNER_PASSPHRASE` — any phrase you choose; you type it once per device to open the browser
+
+Then, on the server, allow your site to embed the browser:
+
+```bash
+./setup.sh --no-system "" https://watchtogether.<your-subdomain>.workers.dev
+```
+
+## The shared browser
+
+- **Opening it** needs the owner passphrase, because the browser keeps the owner's logins.
+  Once open, everyone in the room sees and hears it; people who join later are let in
+  automatically.
+- **One room at a time.** There is a single browser, so a second room that tries to open
+  it is told it is in use.
+- **Control.** In "Everyone" mode whoever clicks the screen takes over. In "One driver"
+  mode one person controls; others press Request control, and the host or current driver
+  hands it over. The host can always take it back.
+- **Quality.** Anyone with control can pick 540p, 720p or 1080p for the whole room. Lower
+  it if the picture stutters; 1080p asks a lot of the free server.
+- **Whose cursor.** Each person's cursor is labelled with their name.
+- **Closing.** The host can close it. It also closes itself 2 minutes after the room
+  empties. Logins stay saved on the server either way.
+- **Private access.** Each person gets their own temporary login to the browser, removed
+  when they are kicked, a minute after they leave, or when the browser closes.
+
+## Keyboard shortcuts
+
+They work whenever you are not typing in a box. While you are clicking around inside the
+shared browser, keys go to that browser instead.
+
+| Key | Does |
+|---|---|
+| `F` | Fullscreen: the picture takes the whole screen (`Esc` to leave) |
+| `C` | Open chat and start typing |
+| `V` (hold) | Talk, when push to talk is on |
+| `Space` | Direct mode: play / pause |
+| `←` `→` | Direct mode: back / forward 10 seconds |
+| `M` | Direct mode: mute for you only |
+
+## On a phone
+
+Open the site in the phone's browser and use "Add to Home Screen" (Android: "Install
+app") to get an icon that opens it full-screen like an app. Chat slides up from the
+bottom. In the shared browser, tap the picture to take control. Turn the phone sideways
+and press the fullscreen button for the biggest picture.
+
+## Direct mode
+
+Switch the room from **Browser** to **Direct** in the top bar. Each person then plays the
+video on their own device, in full quality, and the room keeps the players in step. It
+uses none of the shared browser, so it is the better choice for a long film.
+
+- **What plays:** a YouTube link, a direct video link (`.mp4`, `.webm`, `.m3u8`), or a
+  movie file from your device. Anything behind a login belongs in the shared browser.
+- **Local files:** nothing is uploaded. Whoever has control picks the file; everyone else
+  is asked to pick their own copy. Copies are compared by size and length, and you are
+  warned if yours differs.
+- **Staying in step:** the room holds one playback state stamped with the server's clock.
+  Each player works out where it should be and corrects itself: under 0.3 s off it does
+  nothing, up to 1.5 s it plays 5% faster or slower until it catches up, beyond that (and
+  always on YouTube) it jumps.
+- **Buffering:** if someone's video stalls for more than a second, everyone pauses with
+  "Waiting for …" and resumes together. The host can turn this off in room settings.
+- **Queue:** add links to "Up next"; the next one starts when a video ends.
+- **Who controls:** the same rule as the browser — everyone, or the one driver.
+
+## Voice call
+
+Press **Join call** in the top bar. People in the call connect to each other directly.
+
+- In Browser mode the call starts in **push to talk** (hold the button, or hold `V`), so
+  your microphone does not pick up the shared browser's sound. Untick it for an open mic.
+  Earphones help either way.
+- The camera is off until you turn it on. The call tiles can be dragged out of the way.
+- On most networks this needs no setup. For networks that block direct connections, add a
+  Cloudflare Realtime TURN key as two more secrets, `TURN_KEY_ID` and `TURN_KEY_TOKEN`
+  (`wrangler secret put …` in `apps/worker`). Without them the call simply uses STUN.
 
 ## Room rules
 

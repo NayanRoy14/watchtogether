@@ -35,6 +35,9 @@ importers:
       '@wt/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      hls.js:
+        specifier: ^1.7.4
+        version: 1.7.4
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -66,6 +69,9 @@ importers:
       vite:
         specifier: ^8.3.8
         version: 8.3.8(esbuild@0.28.2)(jiti@2.7.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(vite@8.3.8(esbuild@0.28.2)(jiti@2.7.0))
 
   apps/worker:
     dependencies:
@@ -1199,6 +1205,9 @@ packages:
 
   hermes-parser@0.25.1:
     resolution: {integrity: sha512-6pEjquH3rqaI6cYAXYPcz9MS4rY6R4ngRgrgfDshRptUZIc3lw0MCIJIGDj9++mfySOuPTHB4nrSW99BCvOPIA==}
+
+  hls.js@1.7.4:
+    resolution: {integrity: sha512-3GlxGdPvT2YHvQYOt+yOzT/DEior/qJVNIylHA77kgeoBTdQQqi70GwefNEUmHQeNGyjC8U62+bruqW/Tpm+tg==}
 
   hookified@1.15.1:
     resolution: {integrity: sha512-MvG/clsADq1GPM2KGo2nyfaWVyn9naPiXrqIe4jYjXNZQt238kWyOGrsyc/DmRAQ+Re6yeo6yX/yoNCG5KAEVg==}
@@ -2745,6 +2754,8 @@ snapshots:
   hermes-parser@0.25.1:
     dependencies:
       hermes-estree: 0.25.1
+
+  hls.js@1.7.4: {}
 
   hookified@1.15.1: {}
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { MAX_CHAT_LENGTH } from '@wt/shared';
 import { SendIcon } from '../components/icons';
 import { useRoom } from '../store/room';
+import { ReactionBar } from './Reactions';
 
 const clock = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 
@@ -65,8 +66,12 @@ export function ChatPanel() {
         )}
       </div>
 
-      <form className="border-line flex gap-2 border-t p-3" onSubmit={submit}>
+      <div className="border-line border-t">
+        <ReactionBar />
+      </div>
+      <form className="flex gap-2 p-3" onSubmit={submit}>
         <input
+          id="chat-input"
           className="field"
           value={draft}
           maxLength={MAX_CHAT_LENGTH}

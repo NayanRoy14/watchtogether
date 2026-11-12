@@ -5,7 +5,7 @@ import { GearIcon } from './icons';
 
 const MODES: Array<{ value: ControlMode; label: string; hint: string }> = [
   { value: 'everyone', label: 'Everyone', hint: 'Anyone in the room can control what’s playing.' },
-  { value: 'driver', label: 'One driver', hint: 'Only the host controls; others watch.' },
+  { value: 'driver', label: 'One driver', hint: 'One person controls at a time. Others can ask for a turn.' },
 ];
 
 /** Host-only room settings. Changes apply to everyone immediately. */
@@ -62,6 +62,21 @@ export function SettingsMenu() {
           <p className="text-faint mt-2 text-xs leading-relaxed">{hint}</p>
 
           <div className="bg-line my-4 h-px" />
+
+          <label className="mb-4 flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              className="accent-accent mt-0.5 h-4 w-4"
+              checked={settings.waitForAll}
+              onChange={(e) => update({ waitForAll: e.target.checked })}
+            />
+            <span>
+              <span className="block text-sm font-medium">Wait for everyone</span>
+              <span className="text-faint block text-xs leading-relaxed">
+                In Direct mode, pause for all while someone’s video is buffering.
+              </span>
+            </span>
+          </label>
 
           <label className="flex cursor-pointer items-start gap-3">
             <input

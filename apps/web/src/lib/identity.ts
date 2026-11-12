@@ -47,3 +47,17 @@ export function saveName(name: string): string {
   write('wt.name', clean);
   return clean;
 }
+
+/** The owner's passphrase, remembered on the owner's own device after it first works. */
+export const ownerKey = {
+  get: (): string => read('wt.ownerKey') ?? '',
+  set: (value: string): void => write('wt.ownerKey', value),
+  clear: (): void => {
+    memory.delete('wt.ownerKey');
+    try {
+      localStorage.removeItem('wt.ownerKey');
+    } catch {
+      // nothing stored
+    }
+  },
+};
