@@ -3,6 +3,8 @@ import type { BrowserEngine, EngineMember } from './types';
 /** A stand-in for local development and tests: no server needed, the "browser" is a plain page. */
 export class FakeEngine implements BrowserEngine {
   readonly name = 'fake' as const;
+  /** What the room last told the engine about each person's control, for tests to inspect. */
+  static control = new Map<string, boolean>();
 
   constructor(private readonly origin: string) {}
 
@@ -11,11 +13,14 @@ export class FakeEngine implements BrowserEngine {
   }
   async start(): Promise<void> {}
   async addMember(room: string, member: EngineMember): Promise<string> {
+    FakeEngine.control.set(`${room}:${member.id}`, member.canControl);
     const q = new URLSearchParams({ room, member: member.id, control: String(member.canControl), n: crypto.randomUUID().slice(0, 8) });
     return `${this.origin}/api/fake-browser?${q}`;
   }
   async removeMember(): Promise<void> {}
-  async setControl(): Promise<void> {}
+  async setControl(room: string, members: readonly EngineMember[]): Promise<void> {
+    for (const m of members) FakeEngine.control.set(`${room}:${m.id}`, m.canControl);
+  }
   async setQuality(): Promise<void> {}
   async stop(): Promise<void> {}
 }

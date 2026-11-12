@@ -9,9 +9,9 @@ export class BrowserLease extends DurableObject<Env> {
   async acquire(code: string): Promise<boolean> {
     const holder = await this.ctx.storage.get<string>('holder');
     if (holder && holder !== code) {
-      // Don't trust a stale record: ask the holder whether it still has the browser open.
-      const stillOpen = await this.env.ROOM.get(this.env.ROOM.idFromName(holder)).browserActive();
-      if (stillOpen) return false;
+      // Don't trust a stale record: ask the holder. It refuses only if people are still watching.
+      const freed = await this.env.ROOM.get(this.env.ROOM.idFromName(holder)).yieldBrowser();
+      if (!freed) return false;
     }
     await this.ctx.storage.put('holder', code);
     return true;

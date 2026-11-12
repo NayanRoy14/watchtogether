@@ -130,6 +130,8 @@ function ControlStrip({ onFullscreen, compact }: { onFullscreen: () => void; com
   const send = useRoom((s) => s.send);
   if (!me) return null;
 
+  // Phones and tablets: the stream shows its own keyboard button once you have control.
+  const touch = window.matchMedia('(pointer: coarse)').matches;
   const driver = members.find((m) => m.id === driverId);
   const iDrive = driverId === me.id;
   const iAsked = requests.includes(me.id);
@@ -143,9 +145,13 @@ function ControlStrip({ onFullscreen, compact }: { onFullscreen: () => void; com
         <PointerIcon className="h-3.5 w-3.5 shrink-0" style={{ color: (iDrive ? me : driver)?.color }} />
         <span className={compact ? 'truncate' : ''}>
           {driverId === null
-            ? 'Everyone can control — click or tap the screen to take over'
+            ? touch
+              ? 'Tap the screen to take control. To type, then tap the keyboard button on the picture.'
+              : 'Everyone can control — click the screen to take over'
             : iDrive
-              ? 'You’re controlling'
+              ? touch
+                ? 'You’re controlling. To type, tap the keyboard button on the picture.'
+                : 'You’re controlling'
               : `${driver?.name ?? 'Someone'} is controlling`}
         </span>
       </span>

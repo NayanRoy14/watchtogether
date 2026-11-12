@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
-  { ignores: ['infra/neko/data', '**/dist', '**/.wrangler', '**/node_modules', 'playwright-report', 'test-results'] },
+  { ignores: ['infra/neko/data', 'tools/control-check', '**/dist', '**/.wrangler', '**/node_modules', 'playwright-report', 'test-results'] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   {

@@ -105,9 +105,19 @@ export class Room extends DurableObject<Env> {
     return true;
   }
 
-  /** Asked by BrowserLease before it hands the browser to another room. */
   browserActive(): boolean {
     return this.browser().status !== 'off';
+  }
+
+  /**
+   * Asked by BrowserLease when another room wants the browser. A room with people in it
+   * keeps it; an empty room (everyone left, grace period still running) gives it up now.
+   */
+  async yieldBrowser(): Promise<boolean> {
+    if (!this.browserActive()) return true;
+    if (this.seated().length > 0) return false;
+    await this.stopBrowser();
+    return true;
   }
 
   info(): RoomInfo {
@@ -489,6 +499,14 @@ export class Room extends DurableObject<Env> {
       const latest = this.browser();
       if (latest.status !== 'live') return; // closed while we were creating the login
       this.put('browser', { ...latest, urls: { ...latest.urls, [memberId]: url } } satisfies BrowserState);
+    } else {
+      // Returning with an existing login (reload, network blip). Their control was withdrawn
+      // when they left, so give back whatever they are entitled to now.
+      try {
+        await engine.setControl(this.code(), [this.engineMember(memberId)]);
+      } catch (err) {
+        console.error('browser control restore failed', err);
+      }
     }
     send(ws, { t: 'browser:join', engine: engine.name, url });
   }
