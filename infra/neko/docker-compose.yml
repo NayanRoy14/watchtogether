@@ -1,0 +1,55 @@
+# One shared Chromium (neko) behind Caddy. Settings come from .env — see README.md.
+services:
+  neko:
+    image: ghcr.io/m1k1o/neko/chromium:latest
+    restart: unless-stopped
+    shm_size: 2gb
+    ports:
+      # WebRTC media: one port for everyone, UDP first, TCP as fallback.
+      - "52000:52000/udp"
+      - "52000:52000/tcp"
+      # Admin API for the helper scripts; reachable from the VM itself only.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # Cookies and logins live here, so they survive restarts and upgrades.
+      - ./data/profile:/home/neko/.config/chromium
+      - ./data/members:/var/lib/neko-members
+      - ./policies.json:/etc/chromium/policies/managed/policies.json:ro
+    environment:
+      NEKO_DESKTOP_SCREEN: 1280x720@30
+      NEKO_SERVER_PROXY: "true"
+
+      # Accounts are created and deleted through the API (member.sh now, the room server later).
+      NEKO_MEMBER_PROVIDER: file
+      NEKO_MEMBER_FILE_PATH: /var/lib/neko-members/members.json
+      NEKO_MEMBER_FILE_HASH: "true"
+      NEKO_SESSION_API_TOKEN: ${NEKO_API_TOKEN:?set NEKO_API_TOKEN in .env}
+
+      # Whoever clicks on the screen takes control ("everyone controls").
+      NEKO_SESSION_IMPLICIT_HOSTING: "true"
+      # Token logins instead of cookies, so the browser still works inside our site's iframe.
+      NEKO_SESSION_COOKIE_ENABLED: "false"
+
+      NEKO_WEBRTC_UDPMUX: 52000
+      NEKO_WEBRTC_TCPMUX: 52000
+      NEKO_WEBRTC_ICELITE: "true"
+      NEKO_WEBRTC_NAT1TO1: ${PUBLIC_IP:?set PUBLIC_IP in .env}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [neko]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      NEKO_DOMAIN: ${NEKO_DOMAIN:?set NEKO_DOMAIN in .env}
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://not-set.invalid}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
