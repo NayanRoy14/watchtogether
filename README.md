@@ -3,10 +3,10 @@
 A room-based site where a few friends share one screen. You start a room, send the
 6-character code, and everyone in it sees the same thing with chat alongside. No accounts.
 
-**Status: Phase 3 of 5.** Rooms, chat and host controls work (Phase 1). The shared-browser
-server can be set up from [`infra/neko`](infra/neko/README.md) (Phase 2). A room can now
-open that browser for everyone in it, with shared or one-at-a-time control (Phase 3). The
-voice call and Direct mode (Phase 4) are not built yet.
+**Status: Phase 4 of 5.** Rooms and chat (Phase 1), the shared-browser server
+([`infra/neko`](infra/neko/README.md), Phase 2), the shared browser inside a room (Phase 3),
+and now a voice call, emoji reactions and Direct mode (Phase 4). Phase 5 is polish:
+quality switch, keyboard shortcuts, installable app, phone layout.
 
 ## How it is put together
 
@@ -125,6 +125,38 @@ Then, on the server, allow your site to embed the browser:
   empties. Logins stay saved on the server either way.
 - **Private access.** Each person gets their own temporary login to the browser, removed
   when they are kicked, a minute after they leave, or when the browser closes.
+
+## Direct mode
+
+Switch the room from **Browser** to **Direct** in the top bar. Each person then plays the
+video on their own device, in full quality, and the room keeps the players in step. It
+uses none of the shared browser, so it is the better choice for a long film.
+
+- **What plays:** a YouTube link, a direct video link (`.mp4`, `.webm`, `.m3u8`), or a
+  movie file from your device. Anything behind a login belongs in the shared browser.
+- **Local files:** nothing is uploaded. Whoever has control picks the file; everyone else
+  is asked to pick their own copy. Copies are compared by size and length, and you are
+  warned if yours differs.
+- **Staying in step:** the room holds one playback state stamped with the server's clock.
+  Each player works out where it should be and corrects itself: under 0.3 s off it does
+  nothing, up to 1.5 s it plays 5% faster or slower until it catches up, beyond that (and
+  always on YouTube) it jumps.
+- **Buffering:** if someone's video stalls for more than a second, everyone pauses with
+  "Waiting for …" and resumes together. The host can turn this off in room settings.
+- **Queue:** add links to "Up next"; the next one starts when a video ends.
+- **Who controls:** the same rule as the browser — everyone, or the one driver.
+
+## Voice call
+
+Press **Join call** in the top bar. People in the call connect to each other directly.
+
+- In Browser mode the call starts in **push to talk** (hold the button, or hold `V`), so
+  your microphone does not pick up the shared browser's sound. Untick it for an open mic.
+  Earphones help either way.
+- The camera is off until you turn it on. The call tiles can be dragged out of the way.
+- On most networks this needs no setup. For networks that block direct connections, add a
+  Cloudflare Realtime TURN key as two more secrets, `TURN_KEY_ID` and `TURN_KEY_TOKEN`
+  (`wrangler secret put …` in `apps/worker`). Without them the call simply uses STUN.
 
 ## Room rules
 

@@ -4,11 +4,15 @@ import { formatCode, normalizeCode } from '@wt/shared';
 import { BrowserView } from '../browser/BrowserView';
 import { ChatPanel } from '../chat/ChatPanel';
 import { PeoplePanel } from '../chat/PeoplePanel';
+import { ReactionLayer } from '../chat/Reactions';
 import { Avatar } from '../components/Avatar';
-import { CheckIcon, ExitIcon, LinkIcon, LockIcon, PanelIcon } from '../components/icons';
+import { CheckIcon, ExitIcon, LinkIcon, LockIcon, PanelIcon, PhoneIcon } from '../components/icons';
 import { Mark } from '../components/Mark';
 import { SettingsMenu } from '../components/SettingsMenu';
+import { DirectView } from '../direct/DirectView';
 import { getIdentity } from '../lib/identity';
+import { useCall } from '../rtc/call';
+import { CallDock } from '../rtc/CallDock';
 import { useMe, useRoom } from '../store/room';
 import type { EndReason } from '../store/socket';
 import { Join } from './Join';
@@ -31,11 +35,16 @@ function Room({ code }: { code: string }) {
   const connection = useRoom((s) => s.connection);
   const endReason = useRoom((s) => s.endReason);
   const notice = useRoom((s) => s.notice);
+  const mode = useRoom((s) => s.mode);
+  const callError = useCall((s) => s.error);
   const [panelOpen, setPanelOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches);
 
   useEffect(() => {
     join(code);
-    return leave;
+    return () => {
+      useCall.getState().leave();
+      leave();
+    };
   }, [code, join, leave]);
 
   // Fullscreen covers the whole room, so chat and notices stay visible over the stream.
@@ -51,14 +60,18 @@ function Room({ code }: { code: string }) {
     <div ref={rootRef} className="bg-canvas flex h-full flex-col">
       <TopBar code={code} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((v) => !v)} />
       <div className="relative flex min-h-0 flex-1">
-        <main className="relative flex min-w-0 flex-1 items-center justify-center p-2 sm:p-4">
-          <BrowserView onFullscreen={toggleFullscreen} />
-          {(connection !== 'live' || notice) && (
+        <main className="relative flex min-w-0 flex-1 justify-center overflow-y-auto p-2 sm:p-4">
+          <div className="my-auto flex w-full justify-center">
+            {mode === 'browser' ? <BrowserView onFullscreen={toggleFullscreen} /> : <DirectView onFullscreen={toggleFullscreen} />}
+          </div>
+          <ReactionLayer />
+          <CallDock />
+          {(connection !== 'live' || notice || callError) && (
             <div
               role="status"
-              className="border-line bg-surface absolute top-4 left-1/2 z-10 -translate-x-1/2 rounded-full border px-4 py-2 text-sm shadow-lg shadow-black/50"
+              className="border-line bg-surface absolute top-4 left-1/2 z-20 max-w-[90%] -translate-x-1/2 rounded-full border px-4 py-2 text-center text-sm shadow-lg shadow-black/50"
             >
-              {connection === 'connecting' ? 'Joining…' : connection === 'reconnecting' ? 'Reconnecting…' : notice}
+              {connection === 'connecting' ? 'Joining…' : connection === 'reconnecting' ? 'Reconnecting…' : (notice ?? callError)}
             </div>
           )}
         </main>
@@ -71,7 +84,12 @@ function Room({ code }: { code: string }) {
 function TopBar({ code, panelOpen, onTogglePanel }: { code: string; panelOpen: boolean; onTogglePanel: () => void }) {
   const members = useRoom((s) => s.members);
   const locked = useRoom((s) => s.settings.locked);
-  const amHost = useMe()?.isHost ?? false;
+  const me = useMe();
+  const amHost = me?.isHost ?? false;
+  const mode = useRoom((s) => s.mode);
+  const setMode = useRoom((s) => s.setMode);
+  const inCall = useCall((s) => s.on);
+  const joiningCall = useCall((s) => s.joining);
   const [copied, setCopied] = useState(false);
 
   const copyLink = async (): Promise<void> => {
@@ -96,16 +114,36 @@ function TopBar({ code, panelOpen, onTogglePanel }: { code: string; panelOpen: b
         title="Copy invite link"
       >
         {locked && <LockIcon className="text-faint h-3.5 w-3.5" />}
-        <span className="font-mono text-sm font-semibold tracking-[0.14em]">{formatCode(code)}</span>
+        <span className="font-mono text-sm font-semibold tracking-[0.14em] whitespace-nowrap">{formatCode(code)}</span>
         <span className={`flex items-center gap-1 text-xs ${copied ? 'text-accent' : 'text-dim group-hover:text-fg'}`}>
           {copied ? <CheckIcon className="h-3.5 w-3.5" /> : <LinkIcon className="h-3.5 w-3.5" />}
           <span className="hidden sm:inline">{copied ? 'Link copied' : 'Copy link'}</span>
         </span>
       </button>
 
+      <div
+        className="bg-surface ml-1 grid grid-cols-2 gap-1 rounded-lg p-1"
+        role="radiogroup"
+        aria-label="What the room is watching"
+        title={me?.hasControl ? undefined : 'Only someone with control can switch'}
+      >
+        {(['browser', 'direct'] as const).map((m) => (
+          <button
+            key={m}
+            role="radio"
+            aria-checked={mode === m}
+            disabled={!me?.hasControl}
+            className={`h-8 rounded-md px-2 text-xs font-medium transition-colors sm:px-3 ${mode === m ? 'bg-raised text-fg' : 'text-dim enabled:hover:text-fg'}`}
+            onClick={() => mode !== m && setMode(m)}
+          >
+            {m === 'browser' ? 'Browser' : 'Direct'}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1" />
 
-      <div className="flex -space-x-2 pr-1" aria-label={`${members.length} in the room`}>
+      <div className="hidden -space-x-2 pr-1 sm:flex" aria-label={`${members.length} in the room`}>
         {members.slice(0, 5).map((m) => (
           <span key={m.id} title={m.isHost ? `${m.name} · host` : m.name}>
             <Avatar name={m.name} color={m.color} ring />
@@ -118,6 +156,16 @@ function TopBar({ code, panelOpen, onTogglePanel }: { code: string; panelOpen: b
         )}
       </div>
 
+      {!inCall && (
+        <button
+          className="text-dim hover:bg-raised hover:text-fg flex h-10 items-center gap-2 rounded-lg px-3 text-sm transition-colors disabled:opacity-50"
+          disabled={joiningCall}
+          onClick={() => void useCall.getState().join()}
+        >
+          <PhoneIcon />
+          <span className="hidden sm:inline">{joiningCall ? 'Joining…' : 'Join call'}</span>
+        </button>
+      )}
       {amHost && <SettingsMenu />}
       <button
         className={`hover:bg-raised flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${panelOpen ? 'text-fg' : 'text-dim'}`}

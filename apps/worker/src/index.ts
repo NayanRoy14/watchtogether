@@ -33,6 +33,8 @@ export default {
       return env.ROOM.get(env.ROOM.idFromName(code)).fetch(request);
     }
 
+    if (url.pathname === '/api/ice' && request.method === 'GET') return json({ iceServers: await iceServers(env) });
+
     if (url.pathname === '/api/fake-browser' && env.BROWSER_ENGINE === 'fake') return fakeBrowserPage(url);
 
     return json({ error: 'not_found' }, 404);
@@ -45,7 +47,8 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
 
   const ip = request.headers.get('CF-Connecting-IP') ?? 'local';
   const limiter = env.RATE_LIMIT.get(env.RATE_LIMIT.idFromName(`create:${ip}`));
-  if (!(await limiter.take(CREATE_LIMIT, CREATE_WINDOW_MS))) return json({ error: 'rate_limited' }, 429);
+  const limit = Number(env.ROOM_CREATE_LIMIT) || CREATE_LIMIT;
+  if (!(await limiter.take(limit, CREATE_WINDOW_MS))) return json({ error: 'rate_limited' }, 429);
 
   const hostId = await publicId(body.data.clientId);
   // A collision with a live room is ~1 in 887 million per attempt; retry anyway.
@@ -54,4 +57,29 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
     if (await env.ROOM.get(env.ROOM.idFromName(code)).create(code, hostId)) return json({ code }, 201);
   }
   return json({ error: 'try_again' }, 503);
+}
+
+const STUN = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+/**
+ * Servers the voice call uses to connect two people. STUN is enough on most networks;
+ * with a Cloudflare TURN key configured, short-lived relay credentials are added for the rest.
+ */
+async function iceServers(env: Env): Promise<unknown[]> {
+  if (!env.TURN_KEY_ID || !env.TURN_KEY_TOKEN) return STUN;
+  try {
+    const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.TURN_KEY_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl: 6 * 60 * 60 }),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) throw new Error(`TURN credentials → ${res.status}`);
+    const body = (await res.json()) as { iceServers?: unknown };
+    const relay = Array.isArray(body.iceServers) ? body.iceServers : body.iceServers ? [body.iceServers] : [];
+    return [...STUN, ...relay];
+  } catch (err) {
+    console.error('TURN unavailable, falling back to STUN', err);
+    return STUN;
+  }
 }

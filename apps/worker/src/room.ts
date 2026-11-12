@@ -8,6 +8,8 @@ import {
   ClientMessage,
   DEFAULT_SETTINGS,
   MAX_MEMBERS,
+  MAX_QUEUE,
+  expectedPosition,
   hasControl,
   mayGiveControl,
   nextAlarm,
@@ -18,9 +20,13 @@ import {
   type EngineName,
   type ErrorCode,
   type Member,
+  type PlaybackState,
+  type QueueItem,
   type RoomInfo,
+  type RoomMode,
   type RoomSettings,
   type ServerMessage,
+  type Source,
 } from '@wt/shared';
 import { makeEngine, type BrowserEngine } from './engines/types';
 import type { Env } from './env';
@@ -53,6 +59,9 @@ interface Seat {
   joinedAt: number;
   chatTokens: number;
   chatAt: number;
+  inCall: boolean;
+  camera: boolean;
+  buffering: boolean;
 }
 
 interface Seated {
@@ -172,7 +181,148 @@ export class Room extends DurableObject<Env> {
         this.put('requests', this.requests().filter((id) => id !== target));
         return this.controlChanged();
       }
+
+      case 'react':
+        if (!this.spend(ws, seat)) return;
+        return this.broadcast({ t: 'react', id: Date.now(), memberId: seat.id, emoji: msg.emoji });
+
+      case 'call': {
+        const joining = msg.on && !seat.inCall;
+        // Before marking them: everyone already in the call is who the joiner must ring.
+        const peers = this.seated().filter((s) => s.seat.inCall && s.seat.id !== seat.id).map((s) => s.seat.id);
+        ws.serializeAttachment({ ...seatOf(ws), inCall: msg.on, camera: msg.on && msg.camera });
+        if (joining) send(ws, { t: 'call:peers', ids: peers });
+        return this.broadcastMembers();
+      }
+      case 'rtc': {
+        const target = this.seated().find((s) => s.seat.id === msg.to);
+        if (target && seat.inCall) send(target.ws, { t: 'rtc', from: seat.id, kind: msg.kind, data: msg.data });
+        return;
+      }
+
+      case 'buffering':
+        ws.serializeAttachment({ ...seatOf(ws), buffering: msg.value });
+        this.broadcastMembers();
+        return this.settleWaiting();
+      case 'ended': {
+        const state = this.playback();
+        if (!state || msg.seq !== state.seq) return; // someone else already reported it
+        const [next, ...rest] = this.queue();
+        if (next) {
+          this.setQueue(rest);
+          return this.setPlayback(this.fresh(next.source, true, ''));
+        }
+        return this.setPlayback({ ...state, playing: false, position: expectedPosition(state, Date.now()), by: '' });
+      }
+
+      case 'mode':
+      case 'load':
+      case 'intent':
+      case 'queue':
+        if (!this.canControl(seat.id)) return send(ws, { t: 'error', code: 'no_control' });
+        return this.onDirect(seat, msg);
     }
+  }
+
+  // ---- Direct mode ------------------------------------------------------------
+
+  private onDirect(seat: Seat, msg: Extract<ClientMessage, { t: 'mode' | 'load' | 'intent' | 'queue' }>): void {
+    switch (msg.t) {
+      case 'mode':
+        this.put('mode', msg.mode);
+        return this.broadcast({ t: 'mode', mode: msg.mode });
+
+      case 'load':
+        return this.setPlayback(this.fresh(msg.source, false, seat.name));
+
+      case 'intent': {
+        const state = this.playback();
+        if (!state) return;
+        const base = { ...state, position: msg.position, by: seat.name };
+        if (msg.action === 'play') return this.setPlayback({ ...base, playing: true });
+        if (msg.action === 'pause') return this.setPlayback({ ...base, playing: false });
+        if (msg.action === 'seek') return this.setPlayback(base, true);
+        return this.setPlayback({ ...base, rate: msg.rate ?? state.rate }, true);
+      }
+
+      case 'queue': {
+        const queue = this.queue();
+        if (msg.op === 'add') {
+          if (queue.length >= MAX_QUEUE) return;
+          return this.setQueue([...queue, { id: crypto.randomUUID().slice(0, 8), source: msg.source, addedBy: seat.name }]);
+        }
+        const item = queue.find((q) => q.id === msg.id);
+        if (!item) return;
+        const others = queue.filter((q) => q.id !== msg.id);
+        if (msg.op === 'remove') return this.setQueue(others);
+        if (msg.op === 'move') return this.setQueue([...others.slice(0, msg.to), item, ...others.slice(msg.to)]);
+        this.setQueue(others);
+        return this.setPlayback(this.fresh(item.source, true, seat.name));
+      }
+    }
+  }
+
+  private fresh(source: Source, playing: boolean, by: string): PlaybackState {
+    return { source, playing, position: 0, rate: 1, updatedAt: 0, seq: 0, by };
+  }
+
+  /**
+   * The only way playback changes: stamp it with the server clock, bump the sequence
+   * number and tell everyone, including whoever asked, so all players take the same path.
+   * `keepWaiting` is for changes (seek, speed) that should not cancel a pause-for-buffering.
+   */
+  private setPlayback(next: PlaybackState, keepWaiting = false): void {
+    const previous = this.playback();
+    const state = { ...next, updatedAt: Date.now(), seq: (previous?.seq ?? 0) + 1 };
+    if (previous && previous.source.id !== state.source.id) this.clearBuffering();
+    if (!keepWaiting) this.put('resume', false);
+    this.put('playback', state);
+    this.broadcast({ t: 'state', state });
+    if (!keepWaiting) this.broadcast({ t: 'waiting', for: [] });
+  }
+
+  /**
+   * "Waiting for Riya…": while anyone is stalled, everyone pauses at the same spot;
+   * when the last one catches up, playback resumes from there.
+   */
+  private settleWaiting(): void {
+    const state = this.playback();
+    if (!state || !this.settings().waitForAll) return;
+    const stalled = this.seated().filter((s) => s.seat.buffering).map((s) => s.seat.name);
+    const paused = this.get<boolean>('resume') === true;
+
+    if (stalled.length > 0 && state.playing) {
+      const frozen = { ...state, playing: false, position: expectedPosition(state, Date.now()), by: '' };
+      this.setPlayback(frozen);
+      this.put('resume', true);
+      return this.broadcast({ t: 'waiting', for: stalled });
+    }
+    if (paused) {
+      if (stalled.length > 0) return this.broadcast({ t: 'waiting', for: stalled });
+      this.setPlayback({ ...state, playing: true, by: '' }); // also announces waiting: []
+    }
+  }
+
+  private clearBuffering(): void {
+    for (const { ws, seat } of this.seated()) if (seat.buffering) ws.serializeAttachment({ ...seat, buffering: false });
+  }
+
+  private waitingFor(): string[] {
+    if (this.get<boolean>('resume') !== true) return [];
+    return this.seated().filter((s) => s.seat.buffering).map((s) => s.seat.name);
+  }
+
+  private playback(): PlaybackState | null {
+    return this.get<PlaybackState>('playback');
+  }
+
+  private queue(): QueueItem[] {
+    return this.get<QueueItem[]>('queue') ?? [];
+  }
+
+  private setQueue(queue: QueueItem[]): void {
+    this.put('queue', queue);
+    this.broadcast({ t: 'queue', queue });
   }
 
   override async webSocketClose(ws: WebSocket, code: number): Promise<void> {
@@ -234,7 +384,11 @@ export class Room extends DurableObject<Env> {
       previous.ws.close(CLOSE_REPLACED, 'replaced');
     }
 
-    const seat: Seat = { id, name: msg.name, color: msg.color, joinedAt, chatTokens: CHAT_BURST, chatAt: Date.now() };
+    const seat: Seat = {
+      id, name: msg.name, color: msg.color, joinedAt,
+      chatTokens: CHAT_BURST, chatAt: Date.now(),
+      inCall: false, camera: false, buffering: false,
+    };
     ws.serializeAttachment(seat);
     this.settleHost();
     const { sweep } = this.timers();
@@ -247,6 +401,10 @@ export class Room extends DurableObject<Env> {
       chat: this.recentChat(),
       settings: this.settings(),
       browser: this.browserStatus(),
+      mode: this.get<RoomMode>('mode') ?? 'browser',
+      state: this.playback(),
+      queue: this.queue(),
+      waiting: this.waitingFor(),
     });
     this.broadcastMembers(ws);
     if (this.browser().status === 'live') await this.admit(ws, id);
@@ -367,11 +525,21 @@ export class Room extends DurableObject<Env> {
     }
   }
 
-  private onChat(ws: WebSocket, seat: Seat, text: string): void {
+  /** Chat and reactions share one allowance per person. Returns false when it is used up. */
+  private spend(ws: WebSocket, seat: Seat): boolean {
     const now = Date.now();
     const tokens = Math.min(CHAT_BURST, seat.chatTokens + (now - seat.chatAt) / CHAT_REFILL_MS);
-    if (tokens < 1) return send(ws, { t: 'error', code: 'rate_limited' });
+    if (tokens < 1) {
+      send(ws, { t: 'error', code: 'rate_limited' });
+      return false;
+    }
     ws.serializeAttachment({ ...seat, chatTokens: tokens - 1, chatAt: now } satisfies Seat);
+    return true;
+  }
+
+  private onChat(ws: WebSocket, seat: Seat, text: string): void {
+    if (!this.spend(ws, seat)) return;
+    const now = Date.now();
 
     const row = this.sql
       .exec<ChatRow>(
@@ -400,6 +568,7 @@ export class Room extends DurableObject<Env> {
       await this.setTimers(timers);
     } else {
       await this.setTimers(timers);
+      this.settleWaiting(); // don't keep everyone paused for someone who has gone
       await this.controlChanged(); // the driver or host may have been the one who left
     }
   }
@@ -425,6 +594,9 @@ export class Room extends DurableObject<Env> {
         joinedAt: seat.joinedAt,
         isHost: seat.id === hostId,
         hasControl: this.canControl(seat.id),
+        inCall: seat.inCall,
+        camera: seat.camera,
+        buffering: seat.buffering,
       }))
       .sort((a, b) => a.joinedAt - b.joinedAt);
   }

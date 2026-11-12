@@ -63,6 +63,21 @@ export function SettingsMenu() {
 
           <div className="bg-line my-4 h-px" />
 
+          <label className="mb-4 flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              className="accent-accent mt-0.5 h-4 w-4"
+              checked={settings.waitForAll}
+              onChange={(e) => update({ waitForAll: e.target.checked })}
+            />
+            <span>
+              <span className="block text-sm font-medium">Wait for everyone</span>
+              <span className="text-faint block text-xs leading-relaxed">
+                In Direct mode, pause for all while someone’s video is buffering.
+              </span>
+            </span>
+          </label>
+
           <label className="flex cursor-pointer items-start gap-3">
             <input
               type="checkbox"

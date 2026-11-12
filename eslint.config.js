@@ -13,6 +13,11 @@ export default tseslint.config(
     },
   },
   {
+    // Tests index into known-length arrays all the time; `!` is clearer there than guards.
+    files: ['**/*.test.ts', 'e2e/**'],
+    rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
+  },
+  {
     files: ['apps/web/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {

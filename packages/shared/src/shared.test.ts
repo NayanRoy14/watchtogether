@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CODE_ALPHABET, ClientMessage, formatCode, generateCode, hasControl, mayGiveControl, nextAlarm, normalizeCode,
-  pickDriver, pickHost,
+  pickDriver, pickHost, bestOffset, clockSample, driftAction, expectedPosition, fileFingerprint, parseSource,
 } from './index';
 
 describe('room codes', () => {
@@ -58,5 +58,60 @@ describe('control rules', () => {
     expect(pickHost(members, 'b')).toBe('b');
     expect(pickHost(members, 'gone')).toBe('a');
     expect(pickHost([], 'gone')).toBeNull();
+  });
+});
+
+describe('sync maths', () => {
+  it('estimates the server clock from the fastest round trip', () => {
+    // server is 1000 ms ahead; the slow sample is skewed by an uneven trip
+    const fast = clockSample(0, 1010, 20);
+    const slow = clockSample(100, 1400, 500);
+    expect(fast).toEqual({ offset: 1000, rtt: 20 });
+    expect(bestOffset([slow, fast])).toBe(1000);
+    expect(bestOffset([])).toBe(0);
+  });
+
+  it('works out where the video should be now', () => {
+    const base = { position: 60, rate: 1, updatedAt: 10_000 };
+    expect(expectedPosition({ ...base, playing: false }, 99_000)).toBe(60);
+    expect(expectedPosition({ ...base, playing: true }, 14_000)).toBe(64);
+    expect(expectedPosition({ ...base, playing: true, rate: 1.5 }, 14_000)).toBe(66);
+  });
+
+  it('ignores small drift, nudges medium drift, seeks large drift', () => {
+    expect(driftAction(0.2, 1, true, false)).toEqual({ do: 'nothing' });
+    expect(driftAction(-0.8, 1, true, false)).toEqual({ do: 'nudge', rate: 1.05 }); // behind → faster
+    expect(driftAction(0.8, 1.5, true, false)).toEqual({ do: 'nudge', rate: 1.5 * 0.95 }); // ahead → slower
+    expect(driftAction(2, 1, true, false)).toEqual({ do: 'seek' });
+    expect(driftAction(0.5, 1, false, false)).toEqual({ do: 'seek' }); // YouTube cannot nudge
+  });
+
+  it('keeps nudging until nearly exact once it has started', () => {
+    expect(driftAction(-0.2, 1, true, true)).toEqual({ do: 'nudge', rate: 1.05 });
+    expect(driftAction(-0.05, 1, true, true)).toEqual({ do: 'nothing' });
+  });
+});
+
+describe('sources', () => {
+  it('recognises YouTube links in their usual shapes', () => {
+    for (const link of [
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s',
+      'https://youtu.be/dQw4w9WgXcQ?si=abc',
+      'https://m.youtube.com/shorts/dQw4w9WgXcQ',
+      'https://www.youtube.com/embed/dQw4w9WgXcQ',
+    ]) {
+      expect(parseSource(link)).toMatchObject({ kind: 'youtube', id: 'dQw4w9WgXcQ' });
+    }
+  });
+  it('treats other links as direct media and rejects the rest', () => {
+    expect(parseSource('https://cdn.example.com/films/My%20Movie.mp4')).toEqual({
+      kind: 'url', id: 'https://cdn.example.com/films/My%20Movie.mp4', title: 'My Movie.mp4',
+    });
+    expect(parseSource('https://www.youtube.com/feed/library')).toBeNull();
+    expect(parseSource('not a link')).toBeNull();
+    expect(parseSource('javascript:alert(1)')).toBeNull();
+  });
+  it('fingerprints a local file by size and whole seconds', () => {
+    expect(fileFingerprint(734_003_200, 5400.4)).toBe('734003200-5400');
   });
 });
